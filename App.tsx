@@ -2,34 +2,28 @@ import React, { useState, useRef, useEffect } from 'react';
 import { identifyExperts, runWorkerModels, streamJudgeConsensus } from './services/consensusService';
 import { ConsensusDisplay } from './components/ConsensusDisplay';
 import { WorkerAccordion } from './components/WorkerAccordion';
-import { ConsensusState, FileAttachment } from './types';
+import { ChatTurn, FileAttachment } from './types';
 
 const App: React.FC = () => {
   const [prompt, setPrompt] = useState('');
   const [attachments, setAttachments] = useState<FileAttachment[]>([]);
-  const [state, setState] = useState<ConsensusState>({
-    isProcessing: false,
-    step: 'idle',
-    userPrompt: '',
-    selectedExperts: [],
-    workerResults: [],
-    consensusContent: '',
-  });
+  
+  // State is now a list of turns (chat history)
+  const [turns, setTurns] = useState<ChatTurn[]>([]);
+  const [isProcessing, setIsProcessing] = useState(false);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Auto-scroll logic for content
-  // We scroll to the bottom of the document, relying on the main container's bottom padding
-  // to ensure content sits above the fixed footer.
+  // Auto-scroll logic
   useEffect(() => {
-    if (state.isProcessing) {
+    if (isProcessing || turns.length > 0) {
         window.scrollTo({ 
             top: document.documentElement.scrollHeight, 
             behavior: 'smooth' 
         });
     }
-  }, [state.consensusContent, state.step, state.workerResults]);
+  }, [turns, isProcessing]);
 
   // Auto-expand textarea
   useEffect(() => {
@@ -68,7 +62,6 @@ const App: React.FC = () => {
       
       setAttachments(prev => [...prev, ...newAttachments]);
     }
-    // Reset input so same file can be selected again if needed
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
@@ -78,56 +71,98 @@ const App: React.FC = () => {
 
   const handleSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if ((!prompt.trim() && attachments.length === 0) || state.isProcessing) return;
+    if ((!prompt.trim() && attachments.length === 0) || isProcessing) return;
 
-    // Reset State
-    setState({
-      isProcessing: true,
+    const currentPrompt = prompt;
+    const currentAttachments = [...attachments];
+    
+    // Clear Input immediately
+    setPrompt('');
+    setAttachments([]);
+    if (textareaRef.current) textareaRef.current.style.height = 'auto';
+
+    setIsProcessing(true);
+
+    // Create new turn
+    const newTurn: ChatTurn = {
+      id: Date.now().toString(),
+      userPrompt: currentPrompt,
+      attachments: currentAttachments,
       step: 'routing',
-      userPrompt: prompt,
       selectedExperts: [],
       workerResults: [],
       consensusContent: '',
-    });
+      timestamp: Date.now()
+    };
+
+    setTurns(prev => [...prev, newTurn]);
 
     try {
-      // Step 1: Routing / Orchestration
-      // Pass the attachment info so router knows we have files
-      const experts = await identifyExperts(prompt, attachments);
+      // 1. Get History (exclude current incomplete turn)
+      // Note: React state update is async, but we can use the previous 'turns' from the scope 
+      // before we added the new one, which is exactly what we want (history = previous turns).
+      // However, we need to access the LATEST state in the async chain if we wanted to be perfectly safe,
+      // but 'turns' variable here refers to the state at render time. 
+      // Best practice: Use a local variable for history.
+      const history = [...turns];
+
+      // Update helper
+      const updateCurrentTurn = (updates: Partial<ChatTurn>) => {
+        setTurns(prev => {
+           const newHistory = [...prev];
+           const lastIdx = newHistory.length - 1;
+           if (lastIdx >= 0) {
+             newHistory[lastIdx] = { ...newHistory[lastIdx], ...updates };
+           }
+           return newHistory;
+        });
+      };
+
+      // Step 1: Routing
+      const experts = await identifyExperts(currentPrompt, currentAttachments, history);
       
-      setState(prev => ({ 
-        ...prev, 
+      updateCurrentTurn({ 
         step: 'gathering', 
         selectedExperts: experts,
         workerResults: experts.map(e => ({ expert: e, content: '', status: 'pending' }))
-      }));
+      });
 
       // Step 2: Parallel Execution
-      const workers = await runWorkerModels(experts, prompt, attachments, (currentResults) => {
-        setState(prev => ({ ...prev, workerResults: currentResults }));
+      // We pass 'history' which contains only completed previous turns
+      const workers = await runWorkerModels(experts, currentPrompt, currentAttachments, history, (currentResults) => {
+        updateCurrentTurn({ workerResults: currentResults });
       });
 
       // Step 3: Judging
-      setState(prev => ({ ...prev, step: 'judging', workerResults: workers }));
+      updateCurrentTurn({ step: 'judging', workerResults: workers });
 
-      await streamJudgeConsensus(prompt, attachments, workers, (chunk) => {
-        setState(prev => ({ 
-          ...prev, 
-          consensusContent: prev.consensusContent + chunk 
-        }));
+      await streamJudgeConsensus(currentPrompt, currentAttachments, workers, history, (chunk) => {
+        setTurns(prev => {
+            const newHistory = [...prev];
+            const lastIdx = newHistory.length - 1;
+            if (lastIdx >= 0) {
+                // simple append
+                const currentContent = newHistory[lastIdx].consensusContent + chunk;
+                newHistory[lastIdx] = { ...newHistory[lastIdx], consensusContent: currentContent };
+            }
+            return newHistory;
+        });
       });
 
-      // Done
-      setState(prev => ({ ...prev, isProcessing: false, step: 'complete' }));
+      updateCurrentTurn({ step: 'complete' });
 
     } catch (error) {
       console.error("Workflow failed", error);
-      setState(prev => ({ 
-        ...prev, 
-        isProcessing: false, 
-        step: 'idle', 
-        error: "An unexpected error occurred during the consensus process." 
-      }));
+      setTurns(prev => {
+         const newHistory = [...prev];
+         const lastIdx = newHistory.length - 1;
+         if (lastIdx >= 0) {
+             newHistory[lastIdx] = { ...newHistory[lastIdx], step: 'error', error: "An unexpected error occurred." };
+         }
+         return newHistory;
+      });
+    } finally {
+      setIsProcessing(false);
     }
   };
 
@@ -141,14 +176,8 @@ const App: React.FC = () => {
   const handleClear = () => {
     setPrompt('');
     setAttachments([]);
-    setState({
-      isProcessing: false,
-      step: 'idle',
-      userPrompt: '',
-      selectedExperts: [],
-      workerResults: [],
-      consensusContent: '',
-    });
+    setTurns([]); // Fully clear chat
+    setIsProcessing(false);
     if (textareaRef.current) {
         textareaRef.current.style.height = 'auto';
     }
@@ -161,13 +190,16 @@ const App: React.FC = () => {
       <header className="sticky top-0 z-50 bg-dark-950/80 backdrop-blur-md border-b border-slate-800">
         <div className="max-w-5xl mx-auto px-4 py-4 flex items-center justify-between">
             <div className="flex items-center gap-2">
-                <div className="w-8 h-8 bg-gradient-to-tr from-brand-500 to-purple-500 rounded-lg flex items-center justify-center text-white font-bold text-lg">C</div>
-                <h1 className="font-bold text-xl text-slate-100 tracking-tight">Consensus Engine</h1>
+                <div className="w-8 h-8 bg-gradient-to-tr from-brand-500 to-purple-500 rounded-lg flex items-center justify-center text-white font-bold text-lg">M</div>
+                <h1 className="font-bold text-xl text-slate-100 tracking-tight">MyGpt</h1>
             </div>
-            <div className="hidden md:flex gap-4 text-xs text-slate-500">
-                <span>Multi-Agent System</span>
-                <span>•</span>
-                <span>Dynamic Routing</span>
+            <div className="flex gap-4">
+                 <button 
+                    onClick={handleClear}
+                    className="text-xs text-slate-500 hover:text-white transition-colors"
+                >
+                    Reset Chat
+                </button>
             </div>
         </div>
       </header>
@@ -175,59 +207,86 @@ const App: React.FC = () => {
       <main className="max-w-5xl mx-auto px-4 py-12 pb-72">
         
         {/* Intro / Empty State */}
-        {state.step === 'idle' && !state.consensusContent && (
+        {turns.length === 0 && (
            <div className="text-center mb-12 py-12">
               <h2 className="text-4xl md:text-5xl font-extrabold text-white mb-6 tracking-tight">
                 The <span className="text-transparent bg-clip-text bg-gradient-to-r from-brand-400 to-purple-400">Wisdom of Crowds</span><br/> for AI.
               </h2>
               <p className="text-lg text-slate-400 max-w-2xl mx-auto">
-                Ask anything. We dynamically route your query to specialized AI experts (Cursor, Midjourney, Academic Tutors, etc.) and synthesize a consensus answer.
+                Ask anything. We dynamically route your query to specialized AI experts and synthesize a consensus answer.
               </p>
            </div>
         )}
 
-        {/* Results Area */}
-        <div className="space-y-8">
-            
-            {/* Status Bar for Routing Phase */}
-            {state.step === 'routing' && (
-                <div className="flex items-center justify-center space-x-3 p-8">
-                     <div className="w-5 h-5 border-2 border-brand-500 border-t-transparent rounded-full animate-spin"></div>
-                     <span className="text-brand-400 font-mono text-sm">Analyzing intent and selecting experts...</span>
-                </div>
-            )}
-
-            {/* Selected Experts Banner */}
-            {state.selectedExperts.length > 0 && (
-                <div className="bg-slate-900/50 border border-slate-800 rounded-lg p-4">
-                    <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Selected Experts for this task</div>
-                    <div className="flex flex-wrap gap-2">
-                        {state.selectedExperts.map(exp => (
-                            <span key={exp.id} className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-brand-900/20 border border-brand-500/20 text-brand-300 text-xs font-medium">
-                                <span>{exp.name}</span>
-                            </span>
-                        ))}
-                    </div>
-                </div>
-            )}
-
-            {/* Main Content */}
-            {(state.step === 'gathering' || state.step === 'judging' || state.step === 'complete') && (
-                <>
-                    <ConsensusDisplay 
-                        content={state.consensusContent} 
-                        isThinking={state.step === 'judging' || state.step === 'gathering'} 
-                    />
+        {/* Chat History */}
+        <div className="space-y-16">
+            {turns.map((turn, index) => (
+                <div key={turn.id} className="animate-in fade-in slide-in-from-bottom-4 duration-500">
                     
-                    {state.step === 'gathering' && (
-                        <div className="text-center text-sm text-slate-500 animate-pulse">
-                             Waiting for expert responses...
+                    {/* User Message Bubble */}
+                    <div className="flex justify-end mb-6">
+                        <div className="max-w-[80%] bg-slate-800 text-slate-100 px-6 py-4 rounded-2xl rounded-tr-none border border-slate-700 shadow-sm">
+                            <p className="whitespace-pre-wrap">{turn.userPrompt}</p>
+                            {turn.attachments.length > 0 && (
+                                <div className="mt-3 flex flex-wrap gap-2">
+                                    {turn.attachments.map((f, i) => (
+                                        <div key={i} className="text-xs bg-slate-900/50 px-2 py-1 rounded border border-slate-600 flex items-center gap-1">
+                                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>
+                                            {f.name}
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Status Bar for Routing Phase */}
+                    {turn.step === 'routing' && (
+                        <div className="flex items-center justify-center space-x-3 p-8">
+                            <div className="w-5 h-5 border-2 border-brand-500 border-t-transparent rounded-full animate-spin"></div>
+                            <span className="text-brand-400 font-mono text-sm">Analyzing intent and selecting experts...</span>
                         </div>
                     )}
 
-                    <WorkerAccordion results={state.workerResults} />
-                </>
-            )}
+                    {/* Selected Experts Banner */}
+                    {turn.selectedExperts.length > 0 && (
+                        <div className="mb-4">
+                             <div className="text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-2 ml-1">Engaged Experts</div>
+                            <div className="flex flex-wrap gap-2">
+                                {turn.selectedExperts.map(exp => (
+                                    <span key={exp.id} className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-900 border border-slate-800 text-slate-400 text-xs font-medium">
+                                        <span>{exp.name}</span>
+                                    </span>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Main Content */}
+                    {(turn.step === 'gathering' || turn.step === 'judging' || turn.step === 'complete' || turn.step === 'error') && (
+                        <>
+                            <ConsensusDisplay 
+                                content={turn.consensusContent} 
+                                isThinking={turn.step === 'judging' || turn.step === 'gathering'} 
+                            />
+                            
+                            {turn.step === 'gathering' && (
+                                <div className="text-center text-sm text-slate-500 animate-pulse mt-4">
+                                    Waiting for expert responses...
+                                </div>
+                            )}
+                             
+                            {turn.error && (
+                                <div className="mt-4 p-4 bg-red-900/20 border border-red-900/50 rounded-lg text-red-400 text-sm">
+                                    {turn.error}
+                                </div>
+                            )}
+
+                            <WorkerAccordion results={turn.workerResults} />
+                        </>
+                    )}
+                </div>
+            ))}
         </div>
 
       </main>
@@ -245,24 +304,11 @@ const App: React.FC = () => {
                 multiple 
             />
 
-            {/* Clear Button */}
-            {(prompt || state.consensusContent || attachments.length > 0) && (
-                <button
-                    onClick={handleClear}
-                    type="button"
-                    disabled={state.isProcessing}
-                    className="mb-1 p-3.5 rounded-xl bg-slate-800 border border-slate-700 text-slate-400 hover:text-white hover:bg-slate-700 transition-all disabled:opacity-50 flex-shrink-0"
-                    title="Clear input and output"
-                >
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                </button>
-            )}
-
             {/* File Button */}
              <button
                 onClick={() => fileInputRef.current?.click()}
                 type="button"
-                disabled={state.isProcessing}
+                disabled={isProcessing}
                 className="mb-1 p-3.5 rounded-xl bg-slate-800 border border-slate-700 text-slate-400 hover:text-brand-400 hover:border-brand-500/50 hover:bg-slate-700 transition-all disabled:opacity-50 flex-shrink-0"
                 title="Attach Files"
             >
@@ -291,17 +337,17 @@ const App: React.FC = () => {
                     value={prompt}
                     onChange={(e) => setPrompt(e.target.value)}
                     onKeyDown={handleKeyDown}
-                    disabled={state.isProcessing}
+                    disabled={isProcessing}
                     rows={1}
                     placeholder={attachments.length > 0 ? "Ask about these files..." : "Ask a question..."}
                     className="w-full bg-slate-900 border border-slate-700 text-slate-200 placeholder-slate-500 rounded-xl py-4 pl-6 pr-40 focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 transition-all shadow-lg disabled:opacity-50 disabled:cursor-not-allowed resize-none overflow-hidden min-h-[56px] max-h-[200px]"
                 />
                 <button
                     onClick={() => handleSubmit()}
-                    disabled={(!prompt.trim() && attachments.length === 0) || state.isProcessing}
+                    disabled={(!prompt.trim() && attachments.length === 0) || isProcessing}
                     className="absolute right-2 bottom-2 bg-brand-600 hover:bg-brand-500 text-white font-medium rounded-lg px-4 py-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                 >
-                    {state.isProcessing ? (
+                    {isProcessing ? (
                         <>
                             <svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>

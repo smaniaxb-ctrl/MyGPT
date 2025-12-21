@@ -20,14 +20,16 @@ export interface FileAttachment {
   data: string; // Base64 string without prefix
 }
 
-export interface ConsensusState {
-  isProcessing: boolean;
-  step: 'idle' | 'routing' | 'gathering' | 'judging' | 'complete';
+export interface ChatTurn {
+  id: string;
   userPrompt: string;
+  attachments: FileAttachment[];
+  step: 'routing' | 'gathering' | 'judging' | 'complete' | 'error';
   selectedExperts: ExpertProfile[];
   workerResults: WorkerResult[];
   consensusContent: string;
   error?: string;
+  timestamp: number;
 }
 
 export type StreamChunkHandler = (chunk: string) => void;

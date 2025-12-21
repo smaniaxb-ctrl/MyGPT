@@ -33,7 +33,7 @@ export const ConsensusDisplay: React.FC<Props> = ({ content, isThinking }) => {
               </svg>
             </div>
             <div>
-              <h2 className="text-xl font-bold text-white tracking-tight">Consensus Engine</h2>
+              <h2 className="text-xl font-bold text-white tracking-tight">MyGpt</h2>
               <p className="text-xs text-brand-400 font-medium uppercase tracking-widest">
                 {isThinking ? 'Synthesizing Intelligence...' : 'Final Verdict'}
               </p>

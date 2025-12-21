@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type } from "@google/genai";
-import { ExpertProfile, WorkerResult, StreamChunkHandler, FileAttachment } from "../types";
+import { ExpertProfile, WorkerResult, StreamChunkHandler, FileAttachment, ChatTurn } from "../types";
 
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
@@ -109,9 +109,59 @@ const SPECIALIZED_EXPERTS: ExpertProfile[] = [
 
 const ALL_EXPERTS = [...SPECIALIZED_EXPERTS, ...GENERAL_EXPERTS];
 
+// --- Helper: Format History ---
+const formatHistoryForWorkers = (history: ChatTurn[]) => {
+  const contents: any[] = [];
+  history.forEach(turn => {
+      // 1. User Input
+      contents.push({
+          role: 'user',
+          parts: [
+              ...turn.attachments.map(a => ({ inlineData: { mimeType: a.mimeType, data: a.data } })),
+              { text: turn.userPrompt }
+          ]
+      });
+      // 2. Consensus Output (Simulating that the model agreed with the consensus)
+      if (turn.consensusContent) {
+          contents.push({
+              role: 'model',
+              parts: [{ text: turn.consensusContent }]
+          });
+      }
+  });
+  return contents;
+};
+
+// --- Helper: Retry Logic ---
+const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+async function generateContentWithRetry(options: any, retries = 3, backoffStart = 2000) {
+  for (let i = 0; i < retries; i++) {
+    try {
+      return await ai.models.generateContent(options);
+    } catch (e: any) {
+      // Check for 429 Resource Exhausted or specific error messages
+      const isRateLimit = 
+        e.message?.includes('429') || 
+        e.status === 429 || 
+        e.message?.includes('RESOURCE_EXHAUSTED') ||
+        e.message?.includes('quota');
+
+      if (isRateLimit && i < retries - 1) {
+         // Exponential backoff: 2s, 4s, 8s... + jitter
+         const waitTime = Math.pow(2, i) * backoffStart + (Math.random() * 1000);
+         console.warn(`Hit rate limit (attempt ${i + 1}/${retries}). Retrying in ${Math.round(waitTime)}ms...`);
+         await delay(waitTime);
+         continue;
+      }
+      throw e;
+    }
+  }
+}
+
 // --- 2. Orchestrator (Router) ---
 
-export const identifyExperts = async (userPrompt: string, files: FileAttachment[] = []): Promise<ExpertProfile[]> => {
+export const identifyExperts = async (userPrompt: string, files: FileAttachment[] = [], history: ChatTurn[] = []): Promise<ExpertProfile[]> => {
   const expertListString = ALL_EXPERTS.map(e => `- ID: ${e.id} | Name: ${e.name} | Role: ${e.role}`).join('\n');
 
   let contextNote = "";
@@ -119,20 +169,28 @@ export const identifyExperts = async (userPrompt: string, files: FileAttachment[
     contextNote = `USER HAS ATTACHED ${files.length} FILE(S): ${files.map(f => f.name + ' (' + f.mimeType + ')').join(', ')}.`;
   }
 
+  // Summarize recent history for the router (last 2 turns)
+  let historySummary = "";
+  if (history.length > 0) {
+    const recent = history.slice(-2);
+    historySummary = "\nRECENT CONVERSATION HISTORY:\n" + recent.map(t => `User: ${t.userPrompt}\nSystem: ${t.consensusContent.substring(0, 200)}...`).join('\n') + "\n";
+  }
+
   const routerPrompt = `
     User Prompt: "${userPrompt}"
     ${contextNote}
+    ${historySummary}
 
     Available Experts:
     ${expertListString}
 
     Task:
-    1. Analyze the user's intent (e.g., Coding, Art, Music, Academic/Education, General Info) AND the file type provided.
-    2. Select the top 3 or 4 most relevant experts from the list. 
-       - If an Image is attached, MUST include 'gemini-analytical' (to see it) and potentially creative experts if asked to edit/describe.
-       - If a PDF/Text file is attached, include 'gpt-4o' and 'academic-tutor' or 'gemini-analytical'.
-       - If it's coding, prioritize Cursor, Copilot, Claude.
+    1. Analyze the user's intent and the conversation context.
+    2. Select the top 3 or 4 most relevant experts.
+       - If an Image is attached, MUST include 'gemini-analytical' and creative experts.
+       - If coding, prioritize Cursor, Copilot, Claude.
        - Always include at least one Generalist (GPT-4o or Claude) for balance.
+       - If this is a follow-up question (e.g., "rewrite that"), select experts relevant to the PREVIOUS task too.
     
     Return JSON format only:
     {
@@ -142,7 +200,7 @@ export const identifyExperts = async (userPrompt: string, files: FileAttachment[
   `;
 
   try {
-    const response = await ai.models.generateContent({
+    const response = await generateContentWithRetry({
       model: 'gemini-3-flash-preview',
       contents: routerPrompt,
       config: {
@@ -163,14 +221,11 @@ export const identifyExperts = async (userPrompt: string, files: FileAttachment[
     const json = JSON.parse(response.text || "{}");
     const ids = json.selectedIds || [];
     
-    // Map IDs back to profiles
     const selected = ids.map((id: string) => ALL_EXPERTS.find(e => e.id === id)).filter(Boolean) as ExpertProfile[];
     
-    // Fallback if router fails or returns empty
     if (selected.length === 0) {
       return GENERAL_EXPERTS;
     }
-
     return selected;
 
   } catch (e) {
@@ -185,10 +240,10 @@ export const runWorkerModels = async (
   experts: ExpertProfile[],
   prompt: string, 
   files: FileAttachment[],
+  history: ChatTurn[],
   onUpdate: (results: WorkerResult[]) => void
 ): Promise<WorkerResult[]> => {
   
-  // Initialize results state
   const results: WorkerResult[] = experts.map(expert => ({
     expert,
     content: '',
@@ -200,8 +255,12 @@ export const runWorkerModels = async (
     onUpdate([...results]);
   };
 
-  // Prepare contents with files if any
-  const requestContents: any = {
+  // Build conversation history for the worker
+  const previousHistory = formatHistoryForWorkers(history);
+  
+  // Current Turn
+  const currentContent = {
+    role: 'user',
     parts: [
       ...files.map(f => ({
         inlineData: {
@@ -213,20 +272,23 @@ export const runWorkerModels = async (
     ]
   };
 
+  const fullContents = [...previousHistory, currentContent];
+
   const promises = experts.map(async (expert, index) => {
+    // Significantly increased stagger delay to prevent hitting 429 Rate Limits immediately
+    // 1000ms * index ensures requests are spaced out by 1 second each.
+    await delay(index * 1200);
+
     const startTime = performance.now();
     try {
-      // Small delay to prevent exact simultaneous API hits if using same key
-      await new Promise(r => setTimeout(r, index * 100));
-
-      const response = await ai.models.generateContent({
+      const response = await generateContentWithRetry({
         model: expert.model,
-        contents: requestContents,
+        contents: fullContents, // Send full history + current prompt
         config: {
           systemInstruction: expert.systemInstruction,
           temperature: 0.7,
         }
-      });
+      }, 3, 3000); // 3 retries, starting backoff at 3s
 
       const text = response.text || "No response generated.";
       
@@ -240,7 +302,7 @@ export const runWorkerModels = async (
     } catch (error) {
       console.error(`Error in worker ${expert.name}:`, error);
       updateResult(index, {
-        content: `Error: Failed to fetch response.`,
+        content: `Error: Failed to fetch response. (${(error as Error).message})`,
         status: 'error',
         executionTime: Math.round(performance.now() - startTime)
       });
@@ -258,6 +320,7 @@ export const streamJudgeConsensus = async (
   originalPrompt: string,
   files: FileAttachment[],
   workerResults: WorkerResult[],
+  history: ChatTurn[],
   onChunk: StreamChunkHandler
 ) => {
   const validResponses = workerResults.filter(r => r.status === 'success');
@@ -272,22 +335,31 @@ export const streamJudgeConsensus = async (
     inputsContext += `\n--- SOURCE: ${r.expert.name} (${r.expert.role}) ---\n${r.content}\n`;
   });
 
+  // Construct a text-based history block for the judge (easier to digest as context than chat history)
+  let conversationContext = "";
+  if (history.length > 0) {
+    conversationContext = "PREVIOUS CONVERSATION HISTORY:\n" + 
+      history.map(t => `User: ${t.userPrompt}\nConsensus Answer: ${t.consensusContent}`).join('\n\n') + 
+      "\n\n";
+  }
+
   const judgeSystemPrompt = `
     I have collected responses from specialized AI experts (provided in the context below). 
     
     YOUR TASK:
     Act as the "Consensus Engine". 
-    1. Synthesize a single, superior Final Answer.
-    2. If the user asked for code, merge the best implementation details.
-    3. If the user asked to analyze the attached file, combine the observations from the experts.
+    1. Synthesize a single, superior Final Answer based on the User Prompt and Expert Responses.
+    2. Use the "PREVIOUS CONVERSATION HISTORY" to understand context (e.g., if the user says "rewrite that").
+    3. If the user asked for code, merge the best implementation details.
     4. Highlight any significant disagreements between experts if they exist.
     5. Be authoritative and concise.
 
-    CONTEXT FROM EXPERTS:
+    ${conversationContext}
+
+    CONTEXT FROM EXPERTS (For Current Prompt):
     ${inputsContext}
   `;
 
-  // Judge also gets the files to ensure it can verify context if needed
   const requestContents: any = {
     parts: [
       ...files.map(f => ({
@@ -301,6 +373,8 @@ export const streamJudgeConsensus = async (
   };
 
   try {
+    // Note: Streaming request cannot easily be retried in the same way, but it is a single request 
+    // at the end of the chain, so less likely to hit concurrent rate limits.
     const responseStream = await ai.models.generateContentStream({
       model: 'gemini-3-pro-preview',
       contents: requestContents,
@@ -314,8 +388,13 @@ export const streamJudgeConsensus = async (
         onChunk(chunk.text);
       }
     }
-  } catch (e) {
+  } catch (e: any) {
     console.error("Judge Error:", e);
-    onChunk("\n\n[System Error: The Consensus Judge encountered an error while synthesizing.]");
+    const msg = (e.message || "").toLowerCase();
+    if (msg.includes('429') || msg.includes('exhausted')) {
+         onChunk("\n\n[System Error: Rate limit reached during Consensus. Please wait a moment and try again.]");
+    } else {
+         onChunk("\n\n[System Error: The Consensus Judge encountered an error while synthesizing.]");
+    }
   }
 };
