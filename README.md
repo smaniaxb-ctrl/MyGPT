@@ -1,6 +1,22 @@
-# MyGpt: The AI Consensus Engine
+# MyGpt: The Consensus Engine
 
-**MyGpt** is a next-generation AI aggregator application that moves beyond the traditional "single-bot" chat interface. Instead of relying on a single AI model to answer your questions, MyGpt orchestrates a team of specialized AI personas to deliberate, analyze, and synthesize a superior, hallucination-free response.
+MyGpt is a multi-agent orchestration app that uses the wisdom of crowds to deliver trusted AI answers.
+
+## Why It Matters
+Instead of relying on one model, MyGpt queries multiple expert personas in parallel and synthesizes their outputs into a superior consensus answer.
+
+## Current Status
+This repository contains the app’s design, workflow, and vision. Code implementation is open for contributors.
+
+## How You Can Help
+- **Developers**: Help turn this vision into a working React app.
+- **Supporters**: Fund hosting and API costs to launch MyGpt publicly.
+- **Collaborators**: Share ideas, improve personas, or design UI.
+
+## Contact
+Created by Jayaprakash. Reach out me at smaniaxb@gmail.com if you’d like to collaborate!
+
+---
 
 ## 🧠 How It Works
 
@@ -69,5 +85,4 @@ Unlike apps that force you to choose between a "text mode" or an "image mode," M
 
 1.  Clone the repository.
 2.  Install dependencies: `npm install`
-3.  Set your API Key: `export API_KEY="your_google_genai_key"`
-4.  Run the app: `npm run dev`
+3.  Run the app: `npm run dev`
