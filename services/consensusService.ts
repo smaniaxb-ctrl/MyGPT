@@ -4,7 +4,6 @@ import { ExpertProfile, WorkerResult, StreamChunkHandler, FileAttachment, ChatTu
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 // --- 1. Expert Registry ---
-// A list of simulated personas based on the user's requested tools and general categories.
 
 const GENERAL_EXPERTS: ExpertProfile[] = [
   {
@@ -13,7 +12,8 @@ const GENERAL_EXPERTS: ExpertProfile[] = [
     role: 'General Reasoning & Data Synthesis',
     description: 'Balanced, high-intelligence generalist.',
     systemInstruction: "You are GPT-4o. You are a versatile, highly intelligent assistant. Be concise, objective, and good at synthesizing data. Use markdown formatting.",
-    model: 'gemini-2.0-flash-exp'
+    model: 'gemini-2.0-flash-exp',
+    type: 'text'
   },
   {
     id: 'claude-3-5',
@@ -21,7 +21,8 @@ const GENERAL_EXPERTS: ExpertProfile[] = [
     role: 'Coding Logic & Nuanced Writing',
     description: 'Excellent at creative writing, tone, and complex logic.',
     systemInstruction: "You are Claude 3.5 Sonnet. You excel at nuanced writing, safety, and complex reasoning. Your tone is helpful and conversational but professional.",
-    model: 'gemini-2.0-flash-exp'
+    model: 'gemini-2.0-flash-exp',
+    type: 'text'
   },
   {
     id: 'gemini-analytical',
@@ -29,7 +30,8 @@ const GENERAL_EXPERTS: ExpertProfile[] = [
     role: 'Deep Analysis & Fact Checking',
     description: 'Focuses on facts, logic, and verifying information.',
     systemInstruction: "You are an analytical engine. Prioritize factual accuracy, logical consistency, and comprehensive breakdown of the topic.",
-    model: 'gemini-2.0-flash-exp'
+    model: 'gemini-2.0-flash-exp',
+    type: 'text'
   }
 ];
 
@@ -41,7 +43,8 @@ const SPECIALIZED_EXPERTS: ExpertProfile[] = [
     role: 'Full-Stack Coding & IDE Integration',
     description: 'Specializes in implementation details and file structure.',
     systemInstruction: "You are the Cursor AI Agent. Focus on providing complete, copy-pasteable code blocks. Suggest file structures. Be terse with text, verbose with code.",
-    model: 'gemini-2.0-flash-exp'
+    model: 'gemini-2.0-flash-exp',
+    type: 'text'
   },
   {
     id: 'github-copilot',
@@ -49,7 +52,8 @@ const SPECIALIZED_EXPERTS: ExpertProfile[] = [
     role: 'Code Autocomplete & Boilerplate',
     description: 'Quick, standard code patterns and syntax help.',
     systemInstruction: "You are GitHub Copilot. Provide standard, efficient code snippets for the specific problem. Focus on syntax correctness and best practices.",
-    model: 'gemini-2.0-flash-exp'
+    model: 'gemini-2.0-flash-exp',
+    type: 'text'
   },
   {
     id: 'qodo',
@@ -57,7 +61,8 @@ const SPECIALIZED_EXPERTS: ExpertProfile[] = [
     role: 'Code Testing & Bug Detection',
     description: 'Focuses on edge cases, security, and test coverage.',
     systemInstruction: "You are Qodo. Analyze the request for potential bugs, edge cases, or security flaws. Suggest tests or robust implementation details.",
-    model: 'gemini-2.0-flash-exp'
+    model: 'gemini-2.0-flash-exp',
+    type: 'text'
   },
 
   // Creative / Visual (Text descriptions of)
@@ -67,7 +72,8 @@ const SPECIALIZED_EXPERTS: ExpertProfile[] = [
     role: 'Artistic & Creative Image Generation',
     description: 'Generates detailed artistic prompts and visual descriptions.',
     systemInstruction: "You are Midjourney. Since this is a text interface, describe the visual output in rich, artistic detail. Provide the exact prompt parameters (--v 6.0 --ar 16:9) required to generate such an image.",
-    model: 'gemini-2.0-flash-exp'
+    model: 'gemini-2.0-flash-exp',
+    type: 'text'
   },
   {
     id: 'flux-1',
@@ -75,7 +81,19 @@ const SPECIALIZED_EXPERTS: ExpertProfile[] = [
     role: 'Realistic Image & Text Rendering',
     description: 'Focuses on photorealism and typography in images.',
     systemInstruction: "You are Flux.1. Describe photorealistic scenes with perfect composition. If text is requested in the image, specify exactly how it should be rendered.",
-    model: 'gemini-2.0-flash-exp'
+    model: 'gemini-2.0-flash-exp',
+    type: 'text'
+  },
+  
+  // IMAGE GENERATION
+  {
+    id: 'imagen-3',
+    name: 'Google Imagen 3',
+    role: 'Image Generation',
+    description: 'Generates high-fidelity images based on the prompt.',
+    systemInstruction: "Generate an image.", // Not used for generateImages, but required by type
+    model: 'imagen-3.0-generate-001',
+    type: 'image'
   },
   
   // Media / Video / Audio
@@ -85,7 +103,8 @@ const SPECIALIZED_EXPERTS: ExpertProfile[] = [
     role: 'Cinematic Video Physics',
     description: 'Describes cinematic video sequences and physics.',
     systemInstruction: "You are Sora. Describe a video sequence in cinematic terms: camera angles, lighting, physics of motion, and scene transitions.",
-    model: 'gemini-2.0-flash-exp'
+    model: 'gemini-2.0-flash-exp',
+    type: 'text'
   },
   {
     id: 'suno',
@@ -93,7 +112,8 @@ const SPECIALIZED_EXPERTS: ExpertProfile[] = [
     role: 'Song Composition',
     description: 'Writes lyrics and composes musical structure.',
     systemInstruction: "You are Suno AI. Compose a song based on the prompt. Provide the Lyrics [Verse, Chorus] and describe the Style/Genre and Instrumentals.",
-    model: 'gemini-2.0-flash-exp'
+    model: 'gemini-2.0-flash-exp',
+    type: 'text'
   },
 
   // Education / Academic (Requested by User)
@@ -103,7 +123,8 @@ const SPECIALIZED_EXPERTS: ExpertProfile[] = [
     role: 'Educational & Pedagogical',
     description: 'Explains concepts simply with examples and structure.',
     systemInstruction: "You are an expert Academic Tutor. Your goal is to teach. Explain concepts clearly, use analogies, provide examples, and structure your answer like a textbook or lecture note.",
-    model: 'gemini-2.0-flash-exp'
+    model: 'gemini-2.0-flash-exp',
+    type: 'text'
   }
 ];
 
@@ -162,7 +183,7 @@ async function generateContentWithRetry(options: any, retries = 3, backoffStart 
 // --- 2. Orchestrator (Router) ---
 
 export const identifyExperts = async (userPrompt: string, files: FileAttachment[] = [], history: ChatTurn[] = []): Promise<ExpertProfile[]> => {
-  const expertListString = ALL_EXPERTS.map(e => `- ID: ${e.id} | Name: ${e.name} | Role: ${e.role}`).join('\n');
+  const expertListString = ALL_EXPERTS.map(e => `- ID: ${e.id} | Name: ${e.name} | Role: ${e.role} | Type: ${e.type}`).join('\n');
 
   let contextNote = "";
   if (files.length > 0) {
@@ -188,6 +209,7 @@ export const identifyExperts = async (userPrompt: string, files: FileAttachment[
     1. Analyze the user's intent and the conversation context.
     2. Select the top 3 or 4 most relevant experts.
        - If an Image is attached, MUST include 'gemini-analytical' and creative experts.
+       - If the user explicitly asks to GENERATE, DRAW, or CREATE an IMAGE, you MUST select 'imagen-3'.
        - If coding, prioritize Cursor, Copilot, Claude.
        - Always include at least one Generalist (GPT-4o or Claude) for balance.
        - If this is a follow-up question (e.g., "rewrite that"), select experts relevant to the PREVIOUS task too.
@@ -283,24 +305,52 @@ export const runWorkerModels = async (
 
     const startTime = performance.now();
     try {
-      const response = await generateContentWithRetry({
-        model: expert.model,
-        contents: fullContents, // Send pruned history + current prompt
-        config: {
-          systemInstruction: expert.systemInstruction,
-          temperature: 0.7,
-        }
-      }, 3, 3000); // 3 retries, starting backoff at 3s
+      
+      // IMAGE GENERATION HANDLER
+      if (expert.type === 'image') {
+        const response = await ai.models.generateImages({
+          model: expert.model, // imagen-3.0-generate-001
+          prompt: prompt,
+          config: {
+            numberOfImages: 1,
+            aspectRatio: '16:9',
+            outputMimeType: 'image/jpeg'
+          }
+        });
 
-      const text = response.text || "No response generated.";
+        const generatedImages = response.generatedImages?.map(img => img.image.imageBytes) || [];
+        
+        updateResult(index, {
+          content: `[System]: Successfully generated ${generatedImages.length} image(s) based on the prompt.`,
+          images: generatedImages,
+          status: 'success',
+          executionTime: Math.round(performance.now() - startTime)
+        });
+        return results[index];
+      } 
       
-      updateResult(index, {
-        content: text,
-        status: 'success',
-        executionTime: Math.round(performance.now() - startTime)
-      });
-      
-      return results[index];
+      // TEXT GENERATION HANDLER
+      else {
+        const response = await generateContentWithRetry({
+          model: expert.model,
+          contents: fullContents, // Send pruned history + current prompt
+          config: {
+            systemInstruction: expert.systemInstruction,
+            temperature: 0.7,
+          }
+        }, 3, 3000); // 3 retries, starting backoff at 3s
+
+        const text = response.text || "No response generated.";
+        
+        updateResult(index, {
+          content: text,
+          status: 'success',
+          executionTime: Math.round(performance.now() - startTime)
+        });
+        
+        return results[index];
+      }
+
     } catch (error) {
       console.error(`Error in worker ${expert.name}:`, error);
       updateResult(index, {
@@ -334,7 +384,11 @@ export const streamJudgeConsensus = async (
 
   let inputsContext = "";
   validResponses.forEach((r, i) => {
-    inputsContext += `\n--- SOURCE: ${r.expert.name} (${r.expert.role}) ---\n${r.content}\n`;
+    if (r.expert.type === 'image') {
+      inputsContext += `\n--- SOURCE: ${r.expert.name} (IMAGE GENERATOR) ---\n[System]: I have generated an image for the user. Please inform the user that the image can be found in the Expert Deliberation section below.\n`;
+    } else {
+      inputsContext += `\n--- SOURCE: ${r.expert.name} (${r.expert.role}) ---\n${r.content}\n`;
+    }
   });
 
   // Construct a text-based history block for the judge (easier to digest as context than chat history)
@@ -355,8 +409,9 @@ export const streamJudgeConsensus = async (
     2. STRUCTURE: Use Markdown for clarity. Use H2 (##) for main sections. Use bolding for key terms.
     3. Use the "PREVIOUS CONVERSATION HISTORY" to understand context (e.g., if the user says "rewrite that").
     4. If the user asked for code, merge the best implementation details into a single, cohesive solution.
-    5. Highlight any significant disagreements between experts if they exist.
-    6. Be authoritative and concise.
+    5. If an IMAGE WAS GENERATED (Source: Imagen 3), you MUST explicitly mention in your final answer: "I have generated an image matching your description. You can view it in the **Google Imagen 3** panel within the Expert Deliberation section below."
+    6. Highlight any significant disagreements between experts if they exist.
+    7. Be authoritative and concise.
 
     ${conversationContext}
 

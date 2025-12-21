@@ -5,11 +5,13 @@ export interface ExpertProfile {
   description: string;
   systemInstruction: string;
   model: string;
+  type: 'text' | 'image';
 }
 
 export interface WorkerResult {
   expert: ExpertProfile;
   content: string;
+  images?: string[]; // Array of base64 strings
   status: 'pending' | 'success' | 'error';
   executionTime?: number;
 }
