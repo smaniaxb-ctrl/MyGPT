@@ -12,7 +12,7 @@ const GENERAL_EXPERTS: ExpertProfile[] = [
     role: 'General Reasoning & Data Synthesis',
     description: 'Balanced, high-intelligence generalist.',
     systemInstruction: "You are GPT-4o. You are a versatile, highly intelligent assistant. Be concise, objective, and good at synthesizing data. Use markdown formatting.",
-    model: 'gemini-2.0-flash-exp',
+    model: 'gemini-3-flash-preview',
     type: 'text'
   },
   {
@@ -21,7 +21,7 @@ const GENERAL_EXPERTS: ExpertProfile[] = [
     role: 'Coding Logic & Nuanced Writing',
     description: 'Excellent at creative writing, tone, and complex logic.',
     systemInstruction: "You are Claude 3.5 Sonnet. You excel at nuanced writing, safety, and complex reasoning. Your tone is helpful and conversational but professional.",
-    model: 'gemini-2.0-flash-exp',
+    model: 'gemini-3-flash-preview',
     type: 'text'
   },
   {
@@ -30,7 +30,7 @@ const GENERAL_EXPERTS: ExpertProfile[] = [
     role: 'Deep Analysis & Fact Checking',
     description: 'Focuses on facts, logic, and verifying information.',
     systemInstruction: "You are an analytical engine. Prioritize factual accuracy, logical consistency, and comprehensive breakdown of the topic.",
-    model: 'gemini-2.0-flash-exp',
+    model: 'gemini-3-flash-preview',
     type: 'text'
   }
 ];
@@ -43,7 +43,7 @@ const SPECIALIZED_EXPERTS: ExpertProfile[] = [
     role: 'Full-Stack Coding & IDE Integration',
     description: 'Specializes in implementation details and file structure.',
     systemInstruction: "You are the Cursor AI Agent. Focus on providing complete, copy-pasteable code blocks. Suggest file structures. Be terse with text, verbose with code.",
-    model: 'gemini-2.0-flash-exp',
+    model: 'gemini-3-flash-preview',
     type: 'text'
   },
   {
@@ -52,7 +52,7 @@ const SPECIALIZED_EXPERTS: ExpertProfile[] = [
     role: 'Code Autocomplete & Boilerplate',
     description: 'Quick, standard code patterns and syntax help.',
     systemInstruction: "You are GitHub Copilot. Provide standard, efficient code snippets for the specific problem. Focus on syntax correctness and best practices.",
-    model: 'gemini-2.0-flash-exp',
+    model: 'gemini-3-flash-preview',
     type: 'text'
   },
   {
@@ -61,7 +61,7 @@ const SPECIALIZED_EXPERTS: ExpertProfile[] = [
     role: 'Code Testing & Bug Detection',
     description: 'Focuses on edge cases, security, and test coverage.',
     systemInstruction: "You are Qodo. Analyze the request for potential bugs, edge cases, or security flaws. Suggest tests or robust implementation details.",
-    model: 'gemini-2.0-flash-exp',
+    model: 'gemini-3-flash-preview',
     type: 'text'
   },
 
@@ -72,7 +72,7 @@ const SPECIALIZED_EXPERTS: ExpertProfile[] = [
     role: 'Artistic & Creative Image Generation',
     description: 'Generates detailed artistic prompts and visual descriptions.',
     systemInstruction: "You are Midjourney. Since this is a text interface, describe the visual output in rich, artistic detail. Provide the exact prompt parameters (--v 6.0 --ar 16:9) required to generate such an image.",
-    model: 'gemini-2.0-flash-exp',
+    model: 'gemini-3-flash-preview',
     type: 'text'
   },
   {
@@ -81,18 +81,18 @@ const SPECIALIZED_EXPERTS: ExpertProfile[] = [
     role: 'Realistic Image & Text Rendering',
     description: 'Focuses on photorealism and typography in images.',
     systemInstruction: "You are Flux.1. Describe photorealistic scenes with perfect composition. If text is requested in the image, specify exactly how it should be rendered.",
-    model: 'gemini-2.0-flash-exp',
+    model: 'gemini-3-flash-preview',
     type: 'text'
   },
   
   // IMAGE GENERATION
   {
-    id: 'imagen-3',
-    name: 'Google Imagen 3',
+    id: 'gemini-image',
+    name: 'Gemini Image',
     role: 'Image Generation',
     description: 'Generates high-fidelity images based on the prompt.',
-    systemInstruction: "Generate an image.", // Not used for generateImages, but required by type
-    model: 'imagen-3.0-generate-001',
+    systemInstruction: "Generate an image.", 
+    model: 'gemini-2.5-flash-image',
     type: 'image'
   },
   
@@ -103,7 +103,7 @@ const SPECIALIZED_EXPERTS: ExpertProfile[] = [
     role: 'Cinematic Video Physics',
     description: 'Describes cinematic video sequences and physics.',
     systemInstruction: "You are Sora. Describe a video sequence in cinematic terms: camera angles, lighting, physics of motion, and scene transitions.",
-    model: 'gemini-2.0-flash-exp',
+    model: 'gemini-3-flash-preview',
     type: 'text'
   },
   {
@@ -112,7 +112,7 @@ const SPECIALIZED_EXPERTS: ExpertProfile[] = [
     role: 'Song Composition',
     description: 'Writes lyrics and composes musical structure.',
     systemInstruction: "You are Suno AI. Compose a song based on the prompt. Provide the Lyrics [Verse, Chorus] and describe the Style/Genre and Instrumentals.",
-    model: 'gemini-2.0-flash-exp',
+    model: 'gemini-3-flash-preview',
     type: 'text'
   },
 
@@ -123,7 +123,7 @@ const SPECIALIZED_EXPERTS: ExpertProfile[] = [
     role: 'Educational & Pedagogical',
     description: 'Explains concepts simply with examples and structure.',
     systemInstruction: "You are an expert Academic Tutor. Your goal is to teach. Explain concepts clearly, use analogies, provide examples, and structure your answer like a textbook or lecture note.",
-    model: 'gemini-2.0-flash-exp',
+    model: 'gemini-3-flash-preview',
     type: 'text'
   }
 ];
@@ -156,7 +156,7 @@ const formatHistoryForWorkers = (history: ChatTurn[]) => {
 // --- Helper: Retry Logic ---
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-async function generateContentWithRetry(options: any, retries = 3, backoffStart = 2000) {
+async function generateContentWithRetry(options: any, retries = 5, backoffStart = 4000) {
   for (let i = 0; i < retries; i++) {
     try {
       return await ai.models.generateContent(options);
@@ -168,9 +168,11 @@ async function generateContentWithRetry(options: any, retries = 3, backoffStart 
         e.message?.includes('RESOURCE_EXHAUSTED') ||
         e.message?.includes('quota');
 
-      if (isRateLimit && i < retries - 1) {
-         // Exponential backoff: 2s, 4s, 8s... + jitter
-         const waitTime = Math.pow(2, i) * backoffStart + (Math.random() * 1000);
+      if (isRateLimit) {
+         if (i === retries - 1) throw e; // Throw on last attempt
+
+         // Exponential backoff with jitter: 4s, 8s, 16s, 32s...
+         const waitTime = Math.pow(2, i) * backoffStart + (Math.random() * 2000);
          console.warn(`Hit rate limit (attempt ${i + 1}/${retries}). Retrying in ${Math.round(waitTime)}ms...`);
          await delay(waitTime);
          continue;
@@ -209,7 +211,7 @@ export const identifyExperts = async (userPrompt: string, files: FileAttachment[
     1. Analyze the user's intent and the conversation context.
     2. Select the top 3 or 4 most relevant experts.
        - If an Image is attached, MUST include 'gemini-analytical' and creative experts.
-       - If the user explicitly asks to GENERATE, DRAW, or CREATE an IMAGE, you MUST select 'imagen-3'.
+       - If the user explicitly asks to GENERATE, DRAW, or CREATE an IMAGE, you MUST select 'gemini-image'.
        - If coding, prioritize Cursor, Copilot, Claude.
        - Always include at least one Generalist (GPT-4o or Claude) for balance.
        - If this is a follow-up question (e.g., "rewrite that"), select experts relevant to the PREVIOUS task too.
@@ -223,7 +225,7 @@ export const identifyExperts = async (userPrompt: string, files: FileAttachment[
 
   try {
     const response = await generateContentWithRetry({
-      model: 'gemini-2.0-flash-exp',
+      model: 'gemini-3-flash-preview',
       contents: routerPrompt,
       config: {
         responseMimeType: "application/json",
@@ -251,8 +253,10 @@ export const identifyExperts = async (userPrompt: string, files: FileAttachment[
     return selected;
 
   } catch (e) {
-    console.error("Router failed, falling back to generalists", e);
-    return GENERAL_EXPERTS;
+    console.error("Router failed, falling back to single generalist to save quota", e);
+    // FALLBACK: Only return ONE expert if we are already hitting limits.
+    // Returning 3 experts (GENERAL_EXPERTS) usually triggers 3 more 429s immediately.
+    return [GENERAL_EXPERTS[0]]; 
   }
 };
 
@@ -300,28 +304,39 @@ export const runWorkerModels = async (
 
   const promises = experts.map(async (expert, index) => {
     // Significantly increased stagger delay to prevent hitting 429 Rate Limits immediately
-    // 1000ms * index ensures requests are spaced out by 1 second each.
-    await delay(index * 1200);
+    // 2500ms * index ensures requests are spaced out by 2.5 seconds each.
+    // Added initial padding of 500ms
+    await delay((index * 2500) + 500);
 
     const startTime = performance.now();
     try {
       
-      // IMAGE GENERATION HANDLER
+      // IMAGE GENERATION HANDLER (Using gemini-2.5-flash-image)
       if (expert.type === 'image') {
-        const response = await ai.models.generateImages({
-          model: expert.model, // imagen-3.0-generate-001
-          prompt: prompt,
+        const response = await ai.models.generateContent({
+          model: expert.model, 
+          contents: { parts: [{ text: prompt }] },
           config: {
-            numberOfImages: 1,
-            aspectRatio: '16:9',
-            outputMimeType: 'image/jpeg'
+            imageConfig: { aspectRatio: '16:9' }
+            // Note: responseMimeType is NOT supported for nano banana models
           }
         });
 
-        const generatedImages = response.generatedImages?.map(img => img.image.imageBytes) || [];
+        const generatedImages: string[] = [];
+        let textResponse = "";
+
+        if (response.candidates?.[0]?.content?.parts) {
+            for (const part of response.candidates[0].content.parts) {
+                if (part.inlineData && part.inlineData.data) {
+                    generatedImages.push(part.inlineData.data);
+                } else if (part.text) {
+                    textResponse += part.text;
+                }
+            }
+        }
         
         updateResult(index, {
-          content: `[System]: Successfully generated ${generatedImages.length} image(s) based on the prompt.`,
+          content: `[System]: Successfully generated ${generatedImages.length} image(s). ${textResponse}`,
           images: generatedImages,
           status: 'success',
           executionTime: Math.round(performance.now() - startTime)
@@ -338,7 +353,7 @@ export const runWorkerModels = async (
             systemInstruction: expert.systemInstruction,
             temperature: 0.7,
           }
-        }, 3, 3000); // 3 retries, starting backoff at 3s
+        }, 5, 4000); // 5 retries, starting backoff at 4s
 
         const text = response.text || "No response generated.";
         
@@ -409,7 +424,7 @@ export const streamJudgeConsensus = async (
     2. STRUCTURE: Use Markdown for clarity. Use H2 (##) for main sections. Use bolding for key terms.
     3. Use the "PREVIOUS CONVERSATION HISTORY" to understand context (e.g., if the user says "rewrite that").
     4. If the user asked for code, merge the best implementation details into a single, cohesive solution.
-    5. If an IMAGE WAS GENERATED (Source: Imagen 3), you MUST explicitly mention in your final answer: "I have generated an image matching your description. You can view it in the **Google Imagen 3** panel within the Expert Deliberation section below."
+    5. If an IMAGE WAS GENERATED (Source: Gemini Image), you MUST explicitly mention in your final answer: "I have generated an image matching your description. You can view it in the **Gemini Image** panel within the Expert Deliberation section below."
     6. Highlight any significant disagreements between experts if they exist.
     7. Be authoritative and concise.
 
@@ -435,7 +450,7 @@ export const streamJudgeConsensus = async (
     // Note: Streaming request cannot easily be retried in the same way, but it is a single request 
     // at the end of the chain, so less likely to hit concurrent rate limits.
     const responseStream = await ai.models.generateContentStream({
-      model: 'gemini-2.0-flash-thinking-exp-1219',
+      model: 'gemini-3-pro-preview',
       contents: requestContents,
       config: {
         thinkingConfig: { thinkingBudget: 1024 },
