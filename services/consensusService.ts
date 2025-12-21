@@ -13,7 +13,7 @@ const GENERAL_EXPERTS: ExpertProfile[] = [
     role: 'General Reasoning & Data Synthesis',
     description: 'Balanced, high-intelligence generalist.',
     systemInstruction: "You are GPT-4o. You are a versatile, highly intelligent assistant. Be concise, objective, and good at synthesizing data. Use markdown formatting.",
-    model: 'gemini-3-flash-preview'
+    model: 'gemini-2.0-flash-exp'
   },
   {
     id: 'claude-3-5',
@@ -21,7 +21,7 @@ const GENERAL_EXPERTS: ExpertProfile[] = [
     role: 'Coding Logic & Nuanced Writing',
     description: 'Excellent at creative writing, tone, and complex logic.',
     systemInstruction: "You are Claude 3.5 Sonnet. You excel at nuanced writing, safety, and complex reasoning. Your tone is helpful and conversational but professional.",
-    model: 'gemini-3-flash-preview'
+    model: 'gemini-2.0-flash-exp'
   },
   {
     id: 'gemini-analytical',
@@ -29,7 +29,7 @@ const GENERAL_EXPERTS: ExpertProfile[] = [
     role: 'Deep Analysis & Fact Checking',
     description: 'Focuses on facts, logic, and verifying information.',
     systemInstruction: "You are an analytical engine. Prioritize factual accuracy, logical consistency, and comprehensive breakdown of the topic.",
-    model: 'gemini-3-flash-preview'
+    model: 'gemini-2.0-flash-exp'
   }
 ];
 
@@ -41,7 +41,7 @@ const SPECIALIZED_EXPERTS: ExpertProfile[] = [
     role: 'Full-Stack Coding & IDE Integration',
     description: 'Specializes in implementation details and file structure.',
     systemInstruction: "You are the Cursor AI Agent. Focus on providing complete, copy-pasteable code blocks. Suggest file structures. Be terse with text, verbose with code.",
-    model: 'gemini-3-flash-preview'
+    model: 'gemini-2.0-flash-exp'
   },
   {
     id: 'github-copilot',
@@ -49,7 +49,7 @@ const SPECIALIZED_EXPERTS: ExpertProfile[] = [
     role: 'Code Autocomplete & Boilerplate',
     description: 'Quick, standard code patterns and syntax help.',
     systemInstruction: "You are GitHub Copilot. Provide standard, efficient code snippets for the specific problem. Focus on syntax correctness and best practices.",
-    model: 'gemini-3-flash-preview'
+    model: 'gemini-2.0-flash-exp'
   },
   {
     id: 'qodo',
@@ -57,7 +57,7 @@ const SPECIALIZED_EXPERTS: ExpertProfile[] = [
     role: 'Code Testing & Bug Detection',
     description: 'Focuses on edge cases, security, and test coverage.',
     systemInstruction: "You are Qodo. Analyze the request for potential bugs, edge cases, or security flaws. Suggest tests or robust implementation details.",
-    model: 'gemini-3-flash-preview'
+    model: 'gemini-2.0-flash-exp'
   },
 
   // Creative / Visual (Text descriptions of)
@@ -67,7 +67,7 @@ const SPECIALIZED_EXPERTS: ExpertProfile[] = [
     role: 'Artistic & Creative Image Generation',
     description: 'Generates detailed artistic prompts and visual descriptions.',
     systemInstruction: "You are Midjourney. Since this is a text interface, describe the visual output in rich, artistic detail. Provide the exact prompt parameters (--v 6.0 --ar 16:9) required to generate such an image.",
-    model: 'gemini-3-flash-preview'
+    model: 'gemini-2.0-flash-exp'
   },
   {
     id: 'flux-1',
@@ -75,7 +75,7 @@ const SPECIALIZED_EXPERTS: ExpertProfile[] = [
     role: 'Realistic Image & Text Rendering',
     description: 'Focuses on photorealism and typography in images.',
     systemInstruction: "You are Flux.1. Describe photorealistic scenes with perfect composition. If text is requested in the image, specify exactly how it should be rendered.",
-    model: 'gemini-3-flash-preview'
+    model: 'gemini-2.0-flash-exp'
   },
   
   // Media / Video / Audio
@@ -85,7 +85,7 @@ const SPECIALIZED_EXPERTS: ExpertProfile[] = [
     role: 'Cinematic Video Physics',
     description: 'Describes cinematic video sequences and physics.',
     systemInstruction: "You are Sora. Describe a video sequence in cinematic terms: camera angles, lighting, physics of motion, and scene transitions.",
-    model: 'gemini-3-flash-preview'
+    model: 'gemini-2.0-flash-exp'
   },
   {
     id: 'suno',
@@ -93,7 +93,7 @@ const SPECIALIZED_EXPERTS: ExpertProfile[] = [
     role: 'Song Composition',
     description: 'Writes lyrics and composes musical structure.',
     systemInstruction: "You are Suno AI. Compose a song based on the prompt. Provide the Lyrics [Verse, Chorus] and describe the Style/Genre and Instrumentals.",
-    model: 'gemini-3-flash-preview'
+    model: 'gemini-2.0-flash-exp'
   },
 
   // Education / Academic (Requested by User)
@@ -103,7 +103,7 @@ const SPECIALIZED_EXPERTS: ExpertProfile[] = [
     role: 'Educational & Pedagogical',
     description: 'Explains concepts simply with examples and structure.',
     systemInstruction: "You are an expert Academic Tutor. Your goal is to teach. Explain concepts clearly, use analogies, provide examples, and structure your answer like a textbook or lecture note.",
-    model: 'gemini-3-flash-preview'
+    model: 'gemini-2.0-flash-exp'
   }
 ];
 
@@ -201,7 +201,7 @@ export const identifyExperts = async (userPrompt: string, files: FileAttachment[
 
   try {
     const response = await generateContentWithRetry({
-      model: 'gemini-3-flash-preview',
+      model: 'gemini-2.0-flash-exp',
       contents: routerPrompt,
       config: {
         responseMimeType: "application/json",
@@ -256,7 +256,9 @@ export const runWorkerModels = async (
   };
 
   // Build conversation history for the worker
-  const previousHistory = formatHistoryForWorkers(history);
+  // Context Pruning: Only use the last 5 turns for workers to manage tokens and rate limits
+  const prunedHistory = history.slice(-5);
+  const previousHistory = formatHistoryForWorkers(prunedHistory);
   
   // Current Turn
   const currentContent = {
@@ -283,7 +285,7 @@ export const runWorkerModels = async (
     try {
       const response = await generateContentWithRetry({
         model: expert.model,
-        contents: fullContents, // Send full history + current prompt
+        contents: fullContents, // Send pruned history + current prompt
         config: {
           systemInstruction: expert.systemInstruction,
           temperature: 0.7,
@@ -338,6 +340,7 @@ export const streamJudgeConsensus = async (
   // Construct a text-based history block for the judge (easier to digest as context than chat history)
   let conversationContext = "";
   if (history.length > 0) {
+    // Note: The Judge still receives the FULL history (as requested), not pruned.
     conversationContext = "PREVIOUS CONVERSATION HISTORY:\n" + 
       history.map(t => `User: ${t.userPrompt}\nConsensus Answer: ${t.consensusContent}`).join('\n\n') + 
       "\n\n";
@@ -349,10 +352,11 @@ export const streamJudgeConsensus = async (
     YOUR TASK:
     Act as the "Consensus Engine". 
     1. Synthesize a single, superior Final Answer based on the User Prompt and Expert Responses.
-    2. Use the "PREVIOUS CONVERSATION HISTORY" to understand context (e.g., if the user says "rewrite that").
-    3. If the user asked for code, merge the best implementation details.
-    4. Highlight any significant disagreements between experts if they exist.
-    5. Be authoritative and concise.
+    2. STRUCTURE: Use Markdown for clarity. Use H2 (##) for main sections. Use bolding for key terms.
+    3. Use the "PREVIOUS CONVERSATION HISTORY" to understand context (e.g., if the user says "rewrite that").
+    4. If the user asked for code, merge the best implementation details into a single, cohesive solution.
+    5. Highlight any significant disagreements between experts if they exist.
+    6. Be authoritative and concise.
 
     ${conversationContext}
 
@@ -376,7 +380,7 @@ export const streamJudgeConsensus = async (
     // Note: Streaming request cannot easily be retried in the same way, but it is a single request 
     // at the end of the chain, so less likely to hit concurrent rate limits.
     const responseStream = await ai.models.generateContentStream({
-      model: 'gemini-3-pro-preview',
+      model: 'gemini-2.0-flash-thinking-exp-1219',
       contents: requestContents,
       config: {
         thinkingConfig: { thinkingBudget: 1024 },

@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { WorkerResult } from '../types';
 
 const WorkerCard: React.FC<{ result: WorkerResult }> = ({ result }) => {
@@ -43,11 +45,24 @@ const WorkerCard: React.FC<{ result: WorkerResult }> = ({ result }) => {
       
       {isOpen && (
         <div className="p-4 border-t border-slate-700/50 bg-slate-950/30">
-            <div className="mb-2 text-xs text-slate-500 italic">
-                System Persona: {result.expert.description}
+            <div className="mb-4 text-xs text-slate-500 italic flex items-center gap-2">
+                <span className="bg-slate-800 px-2 py-0.5 rounded text-slate-400">Persona</span>
+                {result.expert.description}
             </div>
-          <div className="prose prose-invert prose-sm max-w-none text-slate-300">
-             <p className="whitespace-pre-wrap leading-relaxed">{result.content || "Waiting for response..."}</p>
+            <div className="text-slate-300 text-sm">
+             {result.content ? (
+                <ReactMarkdown 
+                    remarkPlugins={[remarkGfm]}
+                    className="prose prose-invert prose-sm max-w-none 
+                        prose-pre:bg-black/50 prose-pre:border prose-pre:border-slate-800
+                        prose-code:text-brand-200 prose-code:before:content-none prose-code:after:content-none
+                        prose-a:text-brand-400"
+                >
+                    {result.content}
+                </ReactMarkdown>
+             ) : (
+                 <span className="animate-pulse text-slate-500">Waiting for response...</span>
+             )}
           </div>
         </div>
       )}
@@ -57,9 +72,10 @@ const WorkerCard: React.FC<{ result: WorkerResult }> = ({ result }) => {
 
 export const WorkerAccordion: React.FC<{ results: WorkerResult[] }> = ({ results }) => {
   return (
-    <div className="mt-8">
-      <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4">
-        Source Opinions (Expert Agents)
+    <div className="mt-8 border-t border-slate-800 pt-8">
+      <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4 flex items-center gap-2">
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" /></svg>
+        Expert Deliberation ({results.length})
       </h3>
       <div className="grid grid-cols-1 gap-2">
         {results.map((result) => (

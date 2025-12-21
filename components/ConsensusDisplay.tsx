@@ -1,4 +1,6 @@
 import React from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 interface Props {
   content: string;
@@ -13,7 +15,7 @@ export const ConsensusDisplay: React.FC<Props> = ({ content, isThinking }) => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'consensus-output.txt';
+    a.download = 'consensus-output.md';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -25,7 +27,7 @@ export const ConsensusDisplay: React.FC<Props> = ({ content, isThinking }) => {
       <div className="absolute -inset-1 bg-gradient-to-r from-brand-600 to-purple-600 rounded-xl blur opacity-25 group-hover:opacity-40 transition duration-1000 group-hover:duration-200"></div>
       <div className="relative bg-dark-900 border border-slate-700 rounded-xl p-6 md:p-8 shadow-2xl">
         
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center justify-between mb-6 border-b border-slate-800 pb-4">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-brand-900/30 rounded-lg border border-brand-500/30">
               <svg className="w-6 h-6 text-brand-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -45,7 +47,7 @@ export const ConsensusDisplay: React.FC<Props> = ({ content, isThinking }) => {
                   <button 
                     onClick={handleDownload}
                     className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-slate-400 border border-slate-700 rounded-lg hover:text-white hover:bg-slate-800 transition-colors bg-slate-900/50"
-                    title="Download result as .txt"
+                    title="Download result"
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
                     <span className="hidden sm:inline">Save</span>
@@ -62,9 +64,26 @@ export const ConsensusDisplay: React.FC<Props> = ({ content, isThinking }) => {
           </div>
         </div>
 
-        <div className="min-h-[200px] text-slate-200 leading-7 text-lg">
+        <div className="min-h-[200px] text-slate-200 leading-7">
           {content ? (
-             <p className="whitespace-pre-wrap">{content}</p>
+             <ReactMarkdown 
+               remarkPlugins={[remarkGfm]}
+               className="prose prose-invert prose-lg max-w-none 
+                 prose-headings:text-brand-50 prose-headings:font-bold prose-headings:tracking-tight
+                 prose-p:text-slate-300 prose-p:leading-relaxed
+                 prose-a:text-brand-400 prose-a:no-underline hover:prose-a:text-brand-300 hover:prose-a:underline
+                 prose-strong:text-white prose-strong:font-semibold
+                 prose-ul:marker:text-slate-500
+                 prose-code:text-brand-200 prose-code:bg-slate-950/50 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:font-mono prose-code:before:content-none prose-code:after:content-none
+                 prose-pre:bg-slate-950/80 prose-pre:border prose-pre:border-slate-800 prose-pre:rounded-xl prose-pre:p-4
+                 prose-blockquote:border-l-brand-500 prose-blockquote:bg-slate-800/20 prose-blockquote:py-1 prose-blockquote:px-4 prose-blockquote:rounded-r-lg prose-blockquote:not-italic
+                 prose-hr:border-slate-800
+                 prose-table:text-sm
+                 prose-th:bg-slate-800/50 prose-th:p-2 prose-th:text-slate-200
+                 prose-td:p-2 prose-td:border-b prose-td:border-slate-800"
+             >
+               {content}
+             </ReactMarkdown>
           ) : (
             <div className="flex flex-col items-center justify-center h-48 text-slate-600">
                <svg className="w-12 h-12 mb-4 opacity-20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
