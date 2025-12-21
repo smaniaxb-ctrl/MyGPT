@@ -1,0 +1,5 @@
+{
+  "name": "The Consensus Engine",
+  "description": "An aggregator application that queries multiple AI personas in parallel and uses a Judge Model to synthesize a superior, hallucination-free consensus answer.",
+  "requestFramePermissions": []
+}
