@@ -6,6 +6,7 @@ export interface ExpertProfile {
   systemInstruction: string;
   model: string;
   type: 'text' | 'image';
+  tools?: ('googleSearch')[];
 }
 
 export interface WorkerResult {
@@ -14,6 +15,7 @@ export interface WorkerResult {
   images?: string[]; // Array of base64 strings
   status: 'pending' | 'success' | 'error';
   executionTime?: number;
+  groundingUrls?: { title: string; uri: string }[];
 }
 
 export interface FileAttachment {

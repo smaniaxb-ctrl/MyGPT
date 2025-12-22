@@ -27,6 +27,12 @@ const WorkerCard: React.FC<{ result: WorkerResult }> = ({ result }) => {
           <span className="text-xs text-brand-400 font-mono uppercase tracking-wide truncate max-w-[200px] md:max-w-none">
             {result.expert.role}
           </span>
+          {result.groundingUrls && result.groundingUrls.length > 0 && (
+             <span className="hidden md:flex items-center gap-1 text-[10px] bg-slate-800 text-slate-400 px-2 py-0.5 rounded-full border border-slate-700">
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+                Verified
+             </span>
+          )}
           {result.executionTime && (
             <span className="text-xs text-slate-500 font-mono ml-auto md:ml-2">
               {result.executionTime}ms
@@ -45,9 +51,11 @@ const WorkerCard: React.FC<{ result: WorkerResult }> = ({ result }) => {
       
       {isOpen && (
         <div className="p-4 border-t border-slate-700/50 bg-slate-950/30">
-            <div className="mb-4 text-xs text-slate-500 italic flex items-center gap-2">
-                <span className="bg-slate-800 px-2 py-0.5 rounded text-slate-400">Persona</span>
-                {result.expert.description}
+            <div className="mb-4 flex flex-wrap items-center gap-3 text-xs text-slate-500 italic">
+                <div className="flex items-center gap-2">
+                    <span className="bg-slate-800 px-2 py-0.5 rounded text-slate-400">Persona</span>
+                    {result.expert.description}
+                </div>
             </div>
             
             {/* Image Display */}
@@ -71,6 +79,29 @@ const WorkerCard: React.FC<{ result: WorkerResult }> = ({ result }) => {
                   </div>
                 ))}
               </div>
+            )}
+            
+            {/* Grounding Sources (Google Search Results) */}
+            {result.groundingUrls && result.groundingUrls.length > 0 && (
+                <div className="mb-4 p-3 bg-slate-900/50 rounded-lg border border-slate-800">
+                    <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-2">
+                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /></svg>
+                        Sources
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                        {result.groundingUrls.map((source, i) => (
+                            <a 
+                                key={i} 
+                                href={source.uri} 
+                                target="_blank" 
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1.5 px-2 py-1 rounded bg-slate-800 text-blue-400 hover:text-blue-300 text-xs transition-colors truncate max-w-[200px]"
+                            >
+                                <span className="truncate">{source.title}</span>
+                            </a>
+                        ))}
+                    </div>
+                </div>
             )}
 
             <div className="text-slate-300 text-sm">

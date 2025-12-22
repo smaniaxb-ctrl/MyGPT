@@ -10,10 +10,11 @@ const GENERAL_EXPERTS: ExpertProfile[] = [
     id: 'gpt-4o',
     name: 'GPT-4o (Sim)',
     role: 'General Reasoning & Data Synthesis',
-    description: 'Balanced, high-intelligence generalist.',
+    description: 'Balanced, high-intelligence generalist with web access.',
     systemInstruction: "You are GPT-4o. You are a versatile, highly intelligent assistant. Be concise, objective, and good at synthesizing data. Use markdown formatting.",
     model: 'gemini-3-flash-preview',
-    type: 'text'
+    type: 'text',
+    tools: ['googleSearch']
   },
   {
     id: 'claude-3-5',
@@ -28,10 +29,11 @@ const GENERAL_EXPERTS: ExpertProfile[] = [
     id: 'gemini-analytical',
     name: 'Gemini (Analytical)',
     role: 'Deep Analysis & Fact Checking',
-    description: 'Focuses on facts, logic, and verifying information.',
+    description: 'Focuses on facts, logic, and verifying information via Search.',
     systemInstruction: "You are an analytical engine. Prioritize factual accuracy, logical consistency, and comprehensive breakdown of the topic.",
     model: 'gemini-3-flash-preview',
-    type: 'text'
+    type: 'text',
+    tools: ['googleSearch']
   }
 ];
 
@@ -124,7 +126,8 @@ const SPECIALIZED_EXPERTS: ExpertProfile[] = [
     description: 'Explains concepts simply with examples and structure.',
     systemInstruction: "You are an expert Academic Tutor. Your goal is to teach. Explain concepts clearly, use analogies, provide examples, and structure your answer like a textbook or lecture note.",
     model: 'gemini-3-flash-preview',
-    type: 'text'
+    type: 'text',
+    tools: ['googleSearch']
   }
 ];
 
@@ -346,21 +349,40 @@ export const runWorkerModels = async (
       
       // TEXT GENERATION HANDLER
       else {
+        // ADDED: Check if expert supports search tools
+        const tools = expert.tools?.includes('googleSearch') ? [{ googleSearch: {} }] : undefined;
+
         const response = await generateContentWithRetry({
           model: expert.model,
           contents: fullContents, // Send pruned history + current prompt
           config: {
             systemInstruction: expert.systemInstruction,
             temperature: 0.7,
+            tools: tools // Inject tools if available
           }
         }, 5, 4000); // 5 retries, starting backoff at 4s
 
         const text = response.text || "No response generated.";
         
+        // Extract Grounding Metadata (Sources)
+        const groundingUrls: { title: string; uri: string }[] = [];
+        const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
+        if (chunks) {
+            chunks.forEach((chunk: any) => {
+                if (chunk.web?.uri) {
+                    groundingUrls.push({
+                        title: chunk.web.title || new URL(chunk.web.uri).hostname,
+                        uri: chunk.web.uri
+                    });
+                }
+            });
+        }
+
         updateResult(index, {
           content: text,
           status: 'success',
-          executionTime: Math.round(performance.now() - startTime)
+          executionTime: Math.round(performance.now() - startTime),
+          groundingUrls: groundingUrls.length > 0 ? groundingUrls : undefined
         });
         
         return results[index];
@@ -403,6 +425,10 @@ export const streamJudgeConsensus = async (
       inputsContext += `\n--- SOURCE: ${r.expert.name} (IMAGE GENERATOR) ---\n[System]: I have generated an image for the user. Please inform the user that the image can be found in the Expert Deliberation section below.\n`;
     } else {
       inputsContext += `\n--- SOURCE: ${r.expert.name} (${r.expert.role}) ---\n${r.content}\n`;
+      // Pass grounding info to the Judge as well
+      if (r.groundingUrls && r.groundingUrls.length > 0) {
+        inputsContext += `[Sources Used]: ${r.groundingUrls.map(u => u.uri).join(', ')}\n`;
+      }
     }
   });
 
@@ -416,17 +442,36 @@ export const streamJudgeConsensus = async (
   }
 
   const judgeSystemPrompt = `
-    I have collected responses from specialized AI experts (provided in the context below). 
-    
-    YOUR TASK:
-    Act as the "Consensus Engine". 
-    1. Synthesize a single, superior Final Answer based on the User Prompt and Expert Responses.
-    2. STRUCTURE: Use Markdown for clarity. Use H2 (##) for main sections. Use bolding for key terms.
-    3. Use the "PREVIOUS CONVERSATION HISTORY" to understand context (e.g., if the user says "rewrite that").
-    4. If the user asked for code, merge the best implementation details into a single, cohesive solution.
-    5. If an IMAGE WAS GENERATED (Source: Gemini Image), you MUST explicitly mention in your final answer: "I have generated an image matching your description. You can view it in the **Gemini Image** panel within the Expert Deliberation section below."
-    6. Highlight any significant disagreements between experts if they exist.
-    7. Be authoritative and concise.
+    You are the Orchestrator Agent in the MyGpt Consensus Engine. 
+    Your role is to unify outputs from multiple GPT personas and their respective Agents into a single, authoritative, transparent answer.
+
+    ### Core Instructions:
+    1. **Fusion Logic for Complexity**
+       - Analyze the provided Expert Context.
+       - Normalize into a common schema: {source, answer, reasoning, confidence}.
+       - Merge overlapping content, highlight unique contributions, and resolve conflicts by majority consensus.
+       - If an IMAGE WAS GENERATED (Source: Gemini Image), you MUST explicitly mention in your final answer: "I have generated an image matching your description. You can view it in the **Gemini Image** panel within the Expert Deliberation section below."
+
+    2. **User Experience Simplification**
+       - Present a single unified answer first.
+       - Avoid overwhelming detail unless the user explicitly requests it.
+       - Use Markdown for clarity. Use H2 (##) for main sections.
+
+    3. **Conflict Resolution for Consistency**
+       - If GPTs and Agents disagree:
+         - Rank by confidence score and domain relevance.
+         - Show the consensus answer prominently.
+         - Add a note: “Alternative perspective from [Agent Name]” if relevant.
+
+    4. **Transparency & Trust**
+       - Always annotate which GPT or Agent contributed specific key insights (e.g., "As noted by the Cursor Agent...").
+       - Use clear, layman-friendly language when explaining reasoning.
+       - Ensure the final output feels authoritative but open to inspection.
+
+    ### Output Format:
+    - **Confidence Indicator**: Start with **Confidence: High / Medium / Low** based on agreement level.
+    - **Final Answer**: Concise, authoritative synthesis.
+    - **Supporting Evidence**: A brief summary of the GPT + Agent contributions used to form this answer.
 
     ${conversationContext}
 
