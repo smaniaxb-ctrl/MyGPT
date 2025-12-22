@@ -27,27 +27,31 @@ When you submit a prompt or attach a file, the system doesn't just answer immedi
 *   *Need code?* It recruits the **Cursor Agent** and **GitHub Copilot** simulators.
 *   *Need an image?* It recruits the **Gemini Image** generator.
 *   *Need creative writing?* It recruits the **Claude 3.5 Sonnet** simulator.
+*   *Need facts?* It recruits the **Analytical Engine** with **Google Search** capabilities.
 
 ### 2. Expert Deliberation ( The Workers )
 The selected experts run in **parallel**, each generating a response based on their specific system instructions and role.
 *   **Text Experts** provide reasoning, code, or analysis.
+*   **Search Experts** (GPT-4o Sim, Analytical) perform real-time Google Searches to verify facts and return sources.
 *   **Visual Experts** generate high-fidelity images using `gemini-2.5-flash-image`.
 *   This parallel execution ensures diverse perspectives and prevents "tunnel vision."
 
-### 3. Judicial Synthesis ( The Judge )
-Once the experts have finished, a powerful **Consensus Judge** (`gemini-3-pro-preview`) reads the user's original prompt and *all* the expert responses.
-*   It resolves conflicts between experts.
-*   It merges the best code snippets into a single solution.
-*   It filters out hallucinations (facts stated by one model but contradicted by others).
-*   It formats the final answer into a clean, authoritative response.
+### 3. Orchestrator Synthesis ( The Judge )
+Once the experts have finished, a powerful **Orchestrator Agent** (`gemini-3-pro-preview`) reads the user's original prompt and *all* the expert responses.
+*   **Fusion Logic**: It fuses partial outputs into a normalized schema {source, answer, reasoning}.
+*   **Conflict Resolution**: It resolves disagreements by ranking experts based on their domain relevance.
+*   **Confidence Scoring**: It assigns a **High**, **Medium**, or **Low** confidence score based on the level of consensus.
+*   **Hallucination Filtering**: It cross-references claims against the Search Grounding data.
 
 ---
 
 ## 🚀 Key Features
 
-*   **Multi-Model Orchestration**: dynamically routes queries to simulated versions of GPT-4o, Claude 3.5, and specialized coding agents.
+*   **Multi-Model Orchestration**: Dynamically routes queries to simulated versions of GPT-4o, Claude 3.5, and specialized coding agents.
+*   **Real-Time Web Grounding**: Analytical experts use **Google Search** to provide up-to-date facts and clickable source citations.
 *   **Visual Intelligence**: Integrated image generation that works alongside text reasoning.
 *   **File Context**: Support for analyzing attached files with specialized analytical models.
+*   **Confidence Indicators**: Every final answer provides a transparent confidence assessment.
 *   **Streaming Consensus**: Watch the final verdict being written in real-time.
 *   **Robust Error Handling**: Advanced exponential backoff strategies to handle API rate limits gracefully.
 *   **Transparent Process**: You can expand the "Expert Deliberation" accordion to see exactly what every individual AI model proposed before the final answer was formed.
@@ -76,6 +80,7 @@ Unlike apps that force you to choose between a "text mode" or an "image mode," M
 
 *   **Frontend**: React 19, TypeScript, Tailwind CSS
 *   **AI orchestration**: Google GenAI SDK (Gemini 3 Flash, Gemini 3 Pro, Gemini 2.5 Image)
+*   **Tools**: Google Search Grounding for real-time information.
 *   **Markdown Rendering**: `react-markdown` with GFM support
 *   **Architecture**: Client-side logic for maximum privacy and speed.
 

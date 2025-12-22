@@ -5,7 +5,7 @@ export interface ExpertProfile {
   description: string;
   systemInstruction: string;
   model: string;
-  type: 'text' | 'image';
+  type: 'text' | 'image' | 'video';
   tools?: ('googleSearch')[];
 }
 
@@ -13,9 +13,11 @@ export interface WorkerResult {
   expert: ExpertProfile;
   content: string;
   images?: string[]; // Array of base64 strings
+  videoUri?: string; // Base64 data URI for video
   status: 'pending' | 'success' | 'error';
   executionTime?: number;
   groundingUrls?: { title: string; uri: string }[];
+  requiresKeySelection?: boolean;
 }
 
 export interface FileAttachment {

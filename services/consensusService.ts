@@ -57,17 +57,8 @@ const SPECIALIZED_EXPERTS: ExpertProfile[] = [
     model: 'gemini-3-flash-preview',
     type: 'text'
   },
-  {
-    id: 'qodo',
-    name: 'Qodo (Codium)',
-    role: 'Code Testing & Bug Detection',
-    description: 'Focuses on edge cases, security, and test coverage.',
-    systemInstruction: "You are Qodo. Analyze the request for potential bugs, edge cases, or security flaws. Suggest tests or robust implementation details.",
-    model: 'gemini-3-flash-preview',
-    type: 'text'
-  },
-
-  // Creative / Visual (Text descriptions of)
+  
+  // VISUAL & MEDIA
   {
     id: 'midjourney',
     name: 'Midjourney (Prompter)',
@@ -78,17 +69,6 @@ const SPECIALIZED_EXPERTS: ExpertProfile[] = [
     type: 'text'
   },
   {
-    id: 'flux-1',
-    name: 'Flux.1',
-    role: 'Realistic Image & Text Rendering',
-    description: 'Focuses on photorealism and typography in images.',
-    systemInstruction: "You are Flux.1. Describe photorealistic scenes with perfect composition. If text is requested in the image, specify exactly how it should be rendered.",
-    model: 'gemini-3-flash-preview',
-    type: 'text'
-  },
-  
-  // IMAGE GENERATION
-  {
     id: 'gemini-image',
     name: 'Gemini Image',
     role: 'Image Generation',
@@ -97,17 +77,17 @@ const SPECIALIZED_EXPERTS: ExpertProfile[] = [
     model: 'gemini-2.5-flash-image',
     type: 'image'
   },
-  
-  // Media / Video / Audio
   {
-    id: 'sora',
-    name: 'OpenAI Sora (Sim)',
-    role: 'Cinematic Video Physics',
-    description: 'Describes cinematic video sequences and physics.',
-    systemInstruction: "You are Sora. Describe a video sequence in cinematic terms: camera angles, lighting, physics of motion, and scene transitions.",
-    model: 'gemini-3-flash-preview',
-    type: 'text'
+    id: 'veo-video',
+    name: 'Veo (Video)',
+    role: 'Video Generation',
+    description: 'Generates short high-quality videos (1080p).',
+    systemInstruction: "Generate a video.",
+    model: 'veo-3.1-fast-generate-preview',
+    type: 'video'
   },
+  
+  // Audio
   {
     id: 'suno',
     name: 'Suno AI',
@@ -118,7 +98,7 @@ const SPECIALIZED_EXPERTS: ExpertProfile[] = [
     type: 'text'
   },
 
-  // Education / Academic (Requested by User)
+  // Education
   {
     id: 'academic-tutor',
     name: 'Academic Tutor',
@@ -145,7 +125,7 @@ const formatHistoryForWorkers = (history: ChatTurn[]) => {
               { text: turn.userPrompt }
           ]
       });
-      // 2. Consensus Output (Simulating that the model agreed with the consensus)
+      // 2. Consensus Output
       if (turn.consensusContent) {
           contents.push({
               role: 'model',
@@ -164,7 +144,6 @@ async function generateContentWithRetry(options: any, retries = 5, backoffStart 
     try {
       return await ai.models.generateContent(options);
     } catch (e: any) {
-      // Check for 429 Resource Exhausted or specific error messages
       const isRateLimit = 
         e.message?.includes('429') || 
         e.status === 429 || 
@@ -172,9 +151,7 @@ async function generateContentWithRetry(options: any, retries = 5, backoffStart 
         e.message?.includes('quota');
 
       if (isRateLimit) {
-         if (i === retries - 1) throw e; // Throw on last attempt
-
-         // Exponential backoff with jitter: 4s, 8s, 16s, 32s...
+         if (i === retries - 1) throw e;
          const waitTime = Math.pow(2, i) * backoffStart + (Math.random() * 2000);
          console.warn(`Hit rate limit (attempt ${i + 1}/${retries}). Retrying in ${Math.round(waitTime)}ms...`);
          await delay(waitTime);
@@ -195,7 +172,7 @@ export const identifyExperts = async (userPrompt: string, files: FileAttachment[
     contextNote = `USER HAS ATTACHED ${files.length} FILE(S): ${files.map(f => f.name + ' (' + f.mimeType + ')').join(', ')}.`;
   }
 
-  // Summarize recent history for the router (last 2 turns)
+  // Summarize recent history
   let historySummary = "";
   if (history.length > 0) {
     const recent = history.slice(-2);
@@ -213,11 +190,11 @@ export const identifyExperts = async (userPrompt: string, files: FileAttachment[
     Task:
     1. Analyze the user's intent and the conversation context.
     2. Select the top 3 or 4 most relevant experts.
-       - If an Image is attached, MUST include 'gemini-analytical' and creative experts.
-       - If the user explicitly asks to GENERATE, DRAW, or CREATE an IMAGE, you MUST select 'gemini-image'.
+       - If user asks to ANIMATE, create VIDEO, MOVIE, or motion, you MUST select 'veo-video'.
+       - If an Image is attached, MUST include 'gemini-analytical'.
+       - If the user explicitly asks to GENERATE or DRAW an IMAGE, you MUST select 'gemini-image'.
        - If coding, prioritize Cursor, Copilot, Claude.
        - Always include at least one Generalist (GPT-4o or Claude) for balance.
-       - If this is a follow-up question (e.g., "rewrite that"), select experts relevant to the PREVIOUS task too.
     
     Return JSON format only:
     {
@@ -256,9 +233,7 @@ export const identifyExperts = async (userPrompt: string, files: FileAttachment[
     return selected;
 
   } catch (e) {
-    console.error("Router failed, falling back to single generalist to save quota", e);
-    // FALLBACK: Only return ONE expert if we are already hitting limits.
-    // Returning 3 experts (GENERAL_EXPERTS) usually triggers 3 more 429s immediately.
+    console.error("Router failed", e);
     return [GENERAL_EXPERTS[0]]; 
   }
 };
@@ -284,12 +259,9 @@ export const runWorkerModels = async (
     onUpdate([...results]);
   };
 
-  // Build conversation history for the worker
-  // Context Pruning: Only use the last 5 turns for workers to manage tokens and rate limits
   const prunedHistory = history.slice(-5);
   const previousHistory = formatHistoryForWorkers(prunedHistory);
   
-  // Current Turn
   const currentContent = {
     role: 'user',
     parts: [
@@ -306,22 +278,100 @@ export const runWorkerModels = async (
   const fullContents = [...previousHistory, currentContent];
 
   const promises = experts.map(async (expert, index) => {
-    // Significantly increased stagger delay to prevent hitting 429 Rate Limits immediately
-    // 2500ms * index ensures requests are spaced out by 2.5 seconds each.
-    // Added initial padding of 500ms
-    await delay((index * 2500) + 500);
+    // Stagger execution
+    await delay((index * 2000) + 500);
 
     const startTime = performance.now();
     try {
       
-      // IMAGE GENERATION HANDLER (Using gemini-2.5-flash-image)
-      if (expert.type === 'image') {
+      // --- VIDEO GENERATION (VEO) ---
+      if (expert.type === 'video') {
+         // 1. Check if user has selected an API key (Required for Veo)
+         const win = window as any;
+         if (win.aistudio) {
+             const hasKey = await win.aistudio.hasSelectedApiKey();
+             if (!hasKey) {
+                 updateResult(index, {
+                     content: "Veo requires a paid API key selected via the interface.",
+                     status: 'error',
+                     requiresKeySelection: true
+                 });
+                 return results[index];
+             }
+         }
+
+         // 2. Create fresh instance for Veo call to ensure it uses the selected key
+         // "Create a new GoogleGenAI instance right before making an API call"
+         const videoAi = new GoogleGenAI({ apiKey: process.env.API_KEY });
+
+         let operation;
+         try {
+             operation = await videoAi.models.generateVideos({
+                 model: expert.model,
+                 prompt: prompt,
+                 // If files are present, use the first image as input for img-to-video
+                 image: files.length > 0 && files[0].mimeType.startsWith('image/') ? {
+                     imageBytes: files[0].data,
+                     mimeType: files[0].mimeType
+                 } : undefined,
+                 config: {
+                     numberOfVideos: 1,
+                     resolution: '1080p',
+                     aspectRatio: '16:9'
+                 }
+             });
+         } catch (e: any) {
+             // Handle 404 "Requested entity was not found" specifically
+             if (e.message?.includes('Requested entity was not found') || e.message?.includes('404')) {
+                 updateResult(index, {
+                     content: "Veo API Error: Please select a valid paid API key from a Google Cloud Project with the API enabled.",
+                     status: 'error',
+                     requiresKeySelection: true
+                 });
+                 return results[index];
+             }
+             throw e;
+         }
+
+         // Polling loop
+         updateResult(index, { content: 'Rendering video (this may take 1-2 minutes)...' });
+         
+         while (!operation.done) {
+            await delay(5000); // Check every 5s
+            operation = await videoAi.operations.getVideosOperation({operation: operation});
+         }
+
+         const videoUri = operation.response?.generatedVideos?.[0]?.video?.uri;
+         if (!videoUri) throw new Error("Video generation completed but no URI returned.");
+
+         // Fetch the actual video bytes using the API Key
+         const vidResponse = await fetch(`${videoUri}&key=${process.env.API_KEY}`);
+         if (!vidResponse.ok) throw new Error("Failed to download generated video.");
+         
+         const blob = await vidResponse.blob();
+         // Convert to Base64 Data URI for display
+         const base64Video = await new Promise<string>((resolve) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result as string);
+            reader.readAsDataURL(blob);
+         });
+
+         updateResult(index, {
+             content: `[System]: Successfully generated video.`,
+             videoUri: base64Video,
+             status: 'success',
+             executionTime: Math.round(performance.now() - startTime)
+         });
+         return results[index];
+      }
+
+      // --- IMAGE GENERATION ---
+      else if (expert.type === 'image') {
         const response = await ai.models.generateContent({
           model: expert.model, 
           contents: { parts: [{ text: prompt }] },
           config: {
             imageConfig: { aspectRatio: '16:9' }
-            // Note: responseMimeType is NOT supported for nano banana models
           }
         });
 
@@ -347,24 +397,22 @@ export const runWorkerModels = async (
         return results[index];
       } 
       
-      // TEXT GENERATION HANDLER
+      // --- TEXT GENERATION ---
       else {
-        // ADDED: Check if expert supports search tools
         const tools = expert.tools?.includes('googleSearch') ? [{ googleSearch: {} }] : undefined;
 
         const response = await generateContentWithRetry({
           model: expert.model,
-          contents: fullContents, // Send pruned history + current prompt
+          contents: fullContents, 
           config: {
             systemInstruction: expert.systemInstruction,
             temperature: 0.7,
-            tools: tools // Inject tools if available
+            tools: tools
           }
-        }, 5, 4000); // 5 retries, starting backoff at 4s
+        }, 5, 4000);
 
         const text = response.text || "No response generated.";
         
-        // Extract Grounding Metadata (Sources)
         const groundingUrls: { title: string; uri: string }[] = [];
         const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
         if (chunks) {
@@ -422,61 +470,49 @@ export const streamJudgeConsensus = async (
   let inputsContext = "";
   validResponses.forEach((r, i) => {
     if (r.expert.type === 'image') {
-      inputsContext += `\n--- SOURCE: ${r.expert.name} (IMAGE GENERATOR) ---\n[System]: I have generated an image for the user. Please inform the user that the image can be found in the Expert Deliberation section below.\n`;
+      inputsContext += `\n--- SOURCE: ${r.expert.name} (IMAGE GENERATOR) ---\n[System]: I have generated an image. Tell user to check the Expert Deliberation section.\n`;
+    } else if (r.expert.type === 'video') {
+      inputsContext += `\n--- SOURCE: ${r.expert.name} (VIDEO GENERATOR) ---\n[System]: I have generated a video. Tell user to check the Expert Deliberation section to watch it.\n`;
     } else {
       inputsContext += `\n--- SOURCE: ${r.expert.name} (${r.expert.role}) ---\n${r.content}\n`;
-      // Pass grounding info to the Judge as well
       if (r.groundingUrls && r.groundingUrls.length > 0) {
         inputsContext += `[Sources Used]: ${r.groundingUrls.map(u => u.uri).join(', ')}\n`;
       }
     }
   });
 
-  // Construct a text-based history block for the judge (easier to digest as context than chat history)
   let conversationContext = "";
   if (history.length > 0) {
-    // Note: The Judge still receives the FULL history (as requested), not pruned.
     conversationContext = "PREVIOUS CONVERSATION HISTORY:\n" + 
       history.map(t => `User: ${t.userPrompt}\nConsensus Answer: ${t.consensusContent}`).join('\n\n') + 
       "\n\n";
   }
 
-  const judgeSystemPrompt = `
+  const judgeSystemInstruction = `
     You are the Orchestrator Agent in the MyGpt Consensus Engine. 
     Your role is to unify outputs from multiple GPT personas and their respective Agents into a single, authoritative, transparent answer.
 
     ### Core Instructions:
-    1. **Fusion Logic for Complexity**
-       - Analyze the provided Expert Context.
-       - Normalize into a common schema: {source, answer, reasoning, confidence}.
-       - Merge overlapping content, highlight unique contributions, and resolve conflicts by majority consensus.
-       - If an IMAGE WAS GENERATED (Source: Gemini Image), you MUST explicitly mention in your final answer: "I have generated an image matching your description. You can view it in the **Gemini Image** panel within the Expert Deliberation section below."
+    1. **Fusion Logic**:
+       - Normalize inputs into a common schema.
+       - If an IMAGE was generated, explicitly mention: "I have generated an image matching your description. You can view it in the **Gemini Image** panel below."
+       - If a VIDEO was generated, explicitly mention: "I have generated a video animation matching your request. You can watch it in the **Veo (Video)** panel within the Expert Deliberation section below."
 
-    2. **User Experience Simplification**
-       - Present a single unified answer first.
-       - Avoid overwhelming detail unless the user explicitly requests it.
-       - Use Markdown for clarity. Use H2 (##) for main sections.
+    2. **Conflict Resolution**:
+       - If Agents disagree, rank by confidence score and domain relevance.
+       - Show the consensus answer prominently.
 
-    3. **Conflict Resolution for Consistency**
-       - If GPTs and Agents disagree:
-         - Rank by confidence score and domain relevance.
-         - Show the consensus answer prominently.
-         - Add a note: “Alternative perspective from [Agent Name]” if relevant.
+    3. **Transparency**:
+       - Annotate which Agent contributed specific insights.
 
-    4. **Transparency & Trust**
-       - Always annotate which GPT or Agent contributed specific key insights (e.g., "As noted by the Cursor Agent...").
-       - Use clear, layman-friendly language when explaining reasoning.
-       - Ensure the final output feels authoritative but open to inspection.
-
-    ### Output Format:
-    - **Confidence Indicator**: Start with **Confidence: High / Medium / Low** based on agreement level.
-    - **Final Answer**: Concise, authoritative synthesis.
-    - **Supporting Evidence**: A brief summary of the GPT + Agent contributions used to form this answer.
-
-    ${conversationContext}
-
-    CONTEXT FROM EXPERTS (For Current Prompt):
-    ${inputsContext}
+    ### STRICT OUTPUT FORMAT:
+    You MUST start your response with the Confidence line.
+    
+    **Confidence: [High / Medium / Low]**
+    [Your synthesized response here. Do not repeat "Final Answer" as a header.]
+    
+    ## Supporting Evidence
+    - [Bullet points crediting specific experts]
   `;
 
   const requestContents: any = {
@@ -487,18 +523,22 @@ export const streamJudgeConsensus = async (
           data: f.data
         }
       })),
-      { text: `USER PROMPT: ${originalPrompt}\n\n${judgeSystemPrompt}` }
+      { text: `
+        ${conversationContext}
+        USER PROMPT: ${originalPrompt}
+        CONTEXT FROM EXPERTS:
+        ${inputsContext}
+      ` }
     ]
   };
 
   try {
-    // Note: Streaming request cannot easily be retried in the same way, but it is a single request 
-    // at the end of the chain, so less likely to hit concurrent rate limits.
     const responseStream = await ai.models.generateContentStream({
       model: 'gemini-3-pro-preview',
       contents: requestContents,
       config: {
         thinkingConfig: { thinkingBudget: 1024 },
+        systemInstruction: judgeSystemInstruction
       }
     });
 

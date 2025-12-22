@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
 import { WorkerResult } from '../types';
 
 const WorkerCard: React.FC<{ result: WorkerResult }> = ({ result }) => {
@@ -11,6 +13,16 @@ const WorkerCard: React.FC<{ result: WorkerResult }> = ({ result }) => {
     result.status === 'success' ? 'border-green-500/30 bg-green-900/10 text-green-400' :
     result.status === 'error' ? 'border-red-500/30 bg-red-900/10 text-red-400' :
     'border-blue-500/30 bg-blue-900/10 text-blue-400 animate-pulse';
+
+  const handleSelectKey = async () => {
+    if (window.aistudio) {
+        try {
+            await window.aistudio.openSelectKey();
+        } catch (e) {
+            console.error("Failed to open key selection dialog", e);
+        }
+    }
+  };
 
   return (
     <div className={`border rounded-lg mb-3 overflow-hidden transition-all duration-200 ${isOpen ? 'border-slate-600 bg-slate-800/50' : 'border-slate-800 bg-slate-900'}`}>
@@ -57,7 +69,55 @@ const WorkerCard: React.FC<{ result: WorkerResult }> = ({ result }) => {
                     {result.expert.description}
                 </div>
             </div>
+
+            {/* API Key Selection Action */}
+            {result.requiresKeySelection && (
+                <div className="mb-6 bg-yellow-500/10 border border-yellow-500/30 p-4 rounded-lg">
+                    <h4 className="text-yellow-400 font-bold text-sm mb-2 flex items-center gap-2">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+                        Action Required
+                    </h4>
+                    <p className="text-slate-300 text-sm mb-3">
+                        Generating videos with Veo requires a paid API key. Please select a project with billing enabled.
+                    </p>
+                    <div className="flex items-center gap-4">
+                        <button 
+                            onClick={handleSelectKey}
+                            className="bg-brand-600 hover:bg-brand-500 text-white text-xs px-3 py-2 rounded-lg font-medium flex items-center gap-2 transition-colors"
+                        >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" /></svg>
+                            Select Paid API Key
+                        </button>
+                        <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" rel="noopener noreferrer" className="text-xs text-brand-400 hover:text-brand-300 underline">
+                            View Billing Docs
+                        </a>
+                    </div>
+                </div>
+            )}
             
+            {/* Video Display (Veo) */}
+            {result.videoUri && (
+                <div className="mb-6 rounded-lg overflow-hidden border border-slate-700 bg-black">
+                    <video 
+                        src={result.videoUri} 
+                        controls 
+                        autoPlay
+                        loop
+                        className="w-full h-auto max-h-[400px]"
+                    />
+                    <div className="p-2 bg-slate-900 border-t border-slate-800 flex justify-end">
+                        <a 
+                            href={result.videoUri}
+                            download={`veo-video-${Date.now()}.mp4`}
+                            className="text-xs text-brand-400 hover:text-brand-300 flex items-center gap-1"
+                        >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                            Download MP4
+                        </a>
+                    </div>
+                </div>
+            )}
+
             {/* Image Display */}
             {result.images && result.images.length > 0 && (
               <div className="mb-6 grid grid-cols-1 gap-4">
@@ -81,7 +141,7 @@ const WorkerCard: React.FC<{ result: WorkerResult }> = ({ result }) => {
               </div>
             )}
             
-            {/* Grounding Sources (Google Search Results) */}
+            {/* Grounding Sources */}
             {result.groundingUrls && result.groundingUrls.length > 0 && (
                 <div className="mb-4 p-3 bg-slate-900/50 rounded-lg border border-slate-800">
                     <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-2">
@@ -107,7 +167,8 @@ const WorkerCard: React.FC<{ result: WorkerResult }> = ({ result }) => {
             <div className="text-slate-300 text-sm">
              {result.content ? (
                 <ReactMarkdown 
-                    remarkPlugins={[remarkGfm]}
+                    remarkPlugins={[remarkGfm, remarkMath]}
+                    rehypePlugins={[rehypeKatex]}
                     className="prose prose-invert prose-sm max-w-none 
                         prose-pre:bg-black/50 prose-pre:border prose-pre:border-slate-800
                         prose-code:text-brand-200 prose-code:before:content-none prose-code:after:content-none

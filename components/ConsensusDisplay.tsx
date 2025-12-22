@@ -1,6 +1,8 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
 
 interface Props {
   content: string;
@@ -9,6 +11,35 @@ interface Props {
 
 export const ConsensusDisplay: React.FC<Props> = ({ content, isThinking }) => {
   
+  // Parse Confidence Score & Clean Content
+  const { confidence, cleanContent } = useMemo(() => {
+    if (!content) return { confidence: null, cleanContent: '' };
+
+    // 1. Extract Confidence
+    // Matches "**Confidence: High**" or "Confidence: High" anywhere in the first few lines
+    const confidenceMatch = content.match(/(\*\*|)?Confidence:(\*\*|)?\s*(High|Medium|Low)/i);
+    let extractedConfidence = null;
+    let cleaned = content;
+
+    if (confidenceMatch) {
+        extractedConfidence = confidenceMatch[3].toUpperCase();
+        // Remove the confidence line
+        cleaned = cleaned.replace(confidenceMatch[0], '');
+    }
+
+    // 2. Remove redundant headers like "# Final Answer" or "## Final Answer" if they appear at the start
+    // This keeps the UI cleaner since the card already says "Final Verdict"
+    cleaned = cleaned.replace(/^\s*(#|##)\s*Final Answer\s*/i, '');
+    
+    // Trim leading whitespace/newlines left by removals
+    cleaned = cleaned.trim();
+
+    return {
+        confidence: extractedConfidence,
+        cleanContent: cleaned
+    };
+  }, [content]);
+
   const handleDownload = () => {
     if (!content) return;
     const blob = new Blob([content], { type: 'text/plain' });
@@ -20,6 +51,13 @@ export const ConsensusDisplay: React.FC<Props> = ({ content, isThinking }) => {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+  };
+
+  // Confidence Badge Styles
+  const confidenceStyles: Record<string, string> = {
+    HIGH: 'bg-green-500/10 text-green-400 border-green-500/30',
+    MEDIUM: 'bg-yellow-500/10 text-yellow-400 border-yellow-500/30',
+    LOW: 'bg-red-500/10 text-red-400 border-red-500/30',
   };
 
   return (
@@ -36,9 +74,16 @@ export const ConsensusDisplay: React.FC<Props> = ({ content, isThinking }) => {
             </div>
             <div>
               <h2 className="text-xl font-bold text-white tracking-tight">MyGpt</h2>
-              <p className="text-xs text-brand-400 font-medium uppercase tracking-widest">
-                {isThinking ? 'Synthesizing Intelligence...' : 'Final Verdict'}
-              </p>
+              <div className="flex items-center gap-2">
+                 <p className="text-xs text-brand-400 font-medium uppercase tracking-widest">
+                    {isThinking ? 'Synthesizing Intelligence...' : 'Final Verdict'}
+                 </p>
+                 {confidence && !isThinking && (
+                    <span className={`text-[10px] px-2 py-0.5 rounded border font-bold uppercase tracking-wide ${confidenceStyles[confidence] || 'text-slate-400 border-slate-700'}`}>
+                        Confidence: {confidence}
+                    </span>
+                 )}
+              </div>
             </div>
           </div>
           
@@ -65,9 +110,10 @@ export const ConsensusDisplay: React.FC<Props> = ({ content, isThinking }) => {
         </div>
 
         <div className="min-h-[200px] text-slate-200 leading-7">
-          {content ? (
+          {cleanContent ? (
              <ReactMarkdown 
-               remarkPlugins={[remarkGfm]}
+               remarkPlugins={[remarkGfm, remarkMath]}
+               rehypePlugins={[rehypeKatex]}
                className="prose prose-invert prose-lg max-w-none 
                  prose-headings:text-brand-50 prose-headings:font-bold prose-headings:tracking-tight
                  prose-p:text-slate-300 prose-p:leading-relaxed
@@ -82,7 +128,7 @@ export const ConsensusDisplay: React.FC<Props> = ({ content, isThinking }) => {
                  prose-th:bg-slate-800/50 prose-th:p-2 prose-th:text-slate-200
                  prose-td:p-2 prose-td:border-b prose-td:border-slate-800"
              >
-               {content}
+               {cleanContent}
              </ReactMarkdown>
           ) : (
             <div className="flex flex-col items-center justify-center h-48 text-slate-600">
