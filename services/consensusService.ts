@@ -1,70 +1,65 @@
-import { GoogleGenAI, Type } from "@google/genai";
-import { ExpertProfile, WorkerResult, StreamChunkHandler, FileAttachment, ChatTurn } from "../types";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+import { GoogleGenAI, Type } from "@google/genai";
+import { ExpertProfile, WorkerResult, StreamChunkHandler, FileAttachment, ChatTurn, UserPreferences, FramingProfile } from "../types";
+
+// --- Token Estimation Helper ---
+// Standard approximation: ~4 characters per token
+const estimateTokens = (text: string) => Math.ceil(text.length / 4);
+
+// --- 0. Global System Prompt ---
+const GLOBAL_SYSTEM_PROMPT = `
+You are part of a multi-agent reasoning system.
+
+GLOBAL RULES:
+1. Respect the user's cultural, traditional, and contextual framing.
+2. Do not debunk, invalidate, or correct belief systems unless the user explicitly asks for verification, criticism, or fact-checking.
+3. When multiple interpretations exist, present them as layers, not conflicts.
+4. Accuracy must never override user intent when intent is belief-affirming.
+5. Preserve existing application behavior unless explicitly instructed otherwise.
+`;
 
 // --- 1. Expert Registry ---
 
+const REASONING_STUB = "\n\nREASONING PROTOCOL: Before answering, draft a silent plan: Step 1: Analyze user intent and any attached media. Step 2: Cross-reference knowledge. Step 3: Identify potential errors. Step 4: Final output.";
+
 const GENERAL_EXPERTS: ExpertProfile[] = [
   {
-    id: 'gpt-4o',
-    name: 'GPT-4o (Sim)',
-    role: 'General Reasoning & Data Synthesis',
-    description: 'Balanced, high-intelligence generalist with web access.',
-    systemInstruction: "You are GPT-4o. You are a versatile, highly intelligent assistant. Be concise, objective, and good at synthesizing data. Use markdown formatting.",
+    id: 'flash-generalist',
+    name: 'Gemini Flash (Fast)',
+    role: 'Speed & Logic',
+    description: 'Quick analytical thinker for rapid turns.',
+    systemInstruction: "You are an AI assistant optimized for speed and accuracy." + REASONING_STUB,
     model: 'gemini-3-flash-preview',
     type: 'text',
     tools: ['googleSearch']
   },
   {
-    id: 'claude-3-5',
-    name: 'Claude 3.5 Sonnet (Sim)',
-    role: 'Coding Logic & Nuanced Writing',
-    description: 'Excellent at creative writing, tone, and complex logic.',
-    systemInstruction: "You are Claude 3.5 Sonnet. You excel at nuanced writing, safety, and complex reasoning. Your tone is helpful and conversational but professional.",
-    model: 'gemini-3-flash-preview',
+    id: 'pro-reasoner',
+    name: 'Gemini Pro (Deep)',
+    role: 'Complex Nuance',
+    description: 'Uses deeper reasoning for difficult logic problems.',
+    systemInstruction: "You are a senior-level AI advisor. provide exhaustive, deep analysis of the prompt and attachments." + REASONING_STUB,
+    model: 'gemini-3-pro-preview',
     type: 'text'
-  },
-  {
-    id: 'gemini-analytical',
-    name: 'Gemini (Analytical)',
-    role: 'Deep Analysis & Fact Checking',
-    description: 'Focuses on facts, logic, and verifying information via Search.',
-    systemInstruction: "You are an analytical engine. Prioritize factual accuracy, logical consistency, and comprehensive breakdown of the topic.",
-    model: 'gemini-3-flash-preview',
-    type: 'text',
-    tools: ['googleSearch']
   }
 ];
 
 const SPECIALIZED_EXPERTS: ExpertProfile[] = [
-  // Coding
   {
-    id: 'cursor',
-    name: 'Cursor Agent',
-    role: 'Full-Stack Coding & IDE Integration',
-    description: 'Specializes in implementation details and file structure.',
-    systemInstruction: "You are the Cursor AI Agent. Focus on providing complete, copy-pasteable code blocks. Suggest file structures. Be terse with text, verbose with code.",
-    model: 'gemini-3-flash-preview',
+    id: 'architect',
+    name: 'System Architect',
+    role: 'Visual Design & Infra',
+    description: 'Draws diagrams and plans systems.',
+    systemInstruction: "You are a System Architect. Whenever possible, use Mermaid.js syntax to visualize architectures. Wrap mermaid code in ```mermaid blocks.",
+    model: 'gemini-3-pro-preview',
     type: 'text'
   },
   {
-    id: 'github-copilot',
-    name: 'GitHub Copilot',
-    role: 'Code Autocomplete & Boilerplate',
-    description: 'Quick, standard code patterns and syntax help.',
-    systemInstruction: "You are GitHub Copilot. Provide standard, efficient code snippets for the specific problem. Focus on syntax correctness and best practices.",
-    model: 'gemini-3-flash-preview',
-    type: 'text'
-  },
-  
-  // VISUAL & MEDIA
-  {
-    id: 'midjourney',
-    name: 'Midjourney (Prompter)',
-    role: 'Artistic & Creative Image Generation',
-    description: 'Generates detailed artistic prompts and visual descriptions.',
-    systemInstruction: "You are Midjourney. Since this is a text interface, describe the visual output in rich, artistic detail. Provide the exact prompt parameters (--v 6.0 --ar 16:9) required to generate such an image.",
+    id: 'action-agent',
+    name: 'Action Dispatcher',
+    role: 'Tool & API Integration',
+    description: 'Drafts emails, tickets, and messages.',
+    systemInstruction: "You are an Action Dispatcher. If the user asks for a task like 'Email someone' or 'Send a message', output a JSON block representing the action in this format: ```json\n{ \"action\": \"draft_action\", \"type\": \"email\", \"recipient\": \"...\", \"subject\": \"...\", \"body\": \"...\" }\n```",
     model: 'gemini-3-flash-preview',
     type: 'text'
   },
@@ -72,8 +67,8 @@ const SPECIALIZED_EXPERTS: ExpertProfile[] = [
     id: 'gemini-image',
     name: 'Gemini Image',
     role: 'Image Generation',
-    description: 'Generates high-fidelity images based on the prompt.',
-    systemInstruction: "Generate an image.", 
+    description: 'Generates high-fidelity images.',
+    systemInstruction: "Generate an image based on the prompt.", 
     model: 'gemini-2.5-flash-image',
     type: 'image'
   },
@@ -81,160 +76,142 @@ const SPECIALIZED_EXPERTS: ExpertProfile[] = [
     id: 'veo-video',
     name: 'Veo (Video)',
     role: 'Video Generation',
-    description: 'Generates short high-quality videos (1080p).',
-    systemInstruction: "Generate a video.",
+    description: 'Generates high-quality 1080p motion.',
+    systemInstruction: "Generate a video based on the prompt.",
     model: 'veo-3.1-fast-generate-preview',
     type: 'video'
   },
-  
-  // Audio
   {
-    id: 'suno',
-    name: 'Suno AI',
-    role: 'Song Composition',
-    description: 'Writes lyrics and composes musical structure.',
-    systemInstruction: "You are Suno AI. Compose a song based on the prompt. Provide the Lyrics [Verse, Chorus] and describe the Style/Genre and Instrumentals.",
-    model: 'gemini-3-flash-preview',
-    type: 'text'
-  },
-
-  // Education
-  {
-    id: 'academic-tutor',
-    name: 'Academic Tutor',
-    role: 'Educational & Pedagogical',
-    description: 'Explains concepts simply with examples and structure.',
-    systemInstruction: "You are an expert Academic Tutor. Your goal is to teach. Explain concepts clearly, use analogies, provide examples, and structure your answer like a textbook or lecture note.",
-    model: 'gemini-3-flash-preview',
-    type: 'text',
-    tools: ['googleSearch']
+    id: 'auditor-critic',
+    name: 'Consensus Auditor',
+    role: 'Fact-Checker & Logic Critic',
+    description: 'Reviews consensus for bias, omissions, or logical flaws.',
+    systemInstruction: "You are the Consensus Auditor. Your job is to review the synthesized answer from the Judge. Identify: 1. Any missed details from expert workers. 2. Logical leaps. 3. Over-confidence. 4. Factual inconsistencies. When reviewing, distinguish between: - factual errors - framing mismatches. Flag framing mismatches without demanding correction. Be brief and blunt.",
+    model: 'gemini-3-pro-preview',
+    type: 'critic'
   }
 ];
 
 const ALL_EXPERTS = [...SPECIALIZED_EXPERTS, ...GENERAL_EXPERTS];
 
-// --- Helper: Format History ---
-const formatHistoryForWorkers = (history: ChatTurn[]) => {
-  const contents: any[] = [];
-  history.forEach(turn => {
-      // 1. User Input
-      contents.push({
-          role: 'user',
-          parts: [
-              ...turn.attachments.map(a => ({ inlineData: { mimeType: a.mimeType, data: a.data } })),
-              { text: turn.userPrompt }
-          ]
-      });
-      // 2. Consensus Output
-      if (turn.consensusContent) {
-          contents.push({
-              role: 'model',
-              parts: [{ text: turn.consensusContent }]
-          });
-      }
-  });
-  return contents;
-};
+// --- 1.5 Framing Detection Agent ---
 
-// --- Helper: Retry Logic ---
-const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+export const detectFraming = async (userPrompt: string): Promise<FramingProfile> => {
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  
+  const framingSystemPrompt = `
+    You are a Framing Detection Agent.
+    Your task is NOT to answer the user.
+    Your task is to analyze the user's intent and cultural framing.
+    
+    Output ONLY valid JSON.
+    Do not explain.
+    Do not add extra text.
+    
+    Allowed Values:
+    domain: astrology, religion, culture, science, business, technology, personal, mixed
+    framingIntent: belief-affirming, educational-neutral, critical-analysis, storytelling, cultural-preservation
+    correctionTolerance: low, medium, high
+    authoritySource: tradition, scientific, experiential, textual, mixed
+    audienceType: general-public, devotional, academic, professional
+  `;
 
-async function generateContentWithRetry(options: any, retries = 5, backoffStart = 4000) {
-  for (let i = 0; i < retries; i++) {
-    try {
-      return await ai.models.generateContent(options);
-    } catch (e: any) {
-      const isRateLimit = 
-        e.message?.includes('429') || 
-        e.status === 429 || 
-        e.message?.includes('RESOURCE_EXHAUSTED') ||
-        e.message?.includes('quota');
-
-      if (isRateLimit) {
-         if (i === retries - 1) throw e;
-         const waitTime = Math.pow(2, i) * backoffStart + (Math.random() * 2000);
-         console.warn(`Hit rate limit (attempt ${i + 1}/${retries}). Retrying in ${Math.round(waitTime)}ms...`);
-         await delay(waitTime);
-         continue;
-      }
-      throw e;
+  const framingUserPrompt = `
+    Analyze the following user input and produce a FramingProfile.
+    
+    User Input:
+    ${userPrompt}
+    
+    Return JSON in this exact structure:
+    {
+      "domain": "",
+      "framingIntent": "",
+      "correctionTolerance": "",
+      "authoritySource": "",
+      "audienceType": ""
     }
+  `;
+
+  try {
+    const response = await ai.models.generateContent({
+      model: 'gemini-3-flash-preview',
+      contents: framingUserPrompt,
+      config: { 
+        systemInstruction: framingSystemPrompt,
+        responseMimeType: "application/json"
+      }
+    });
+    
+    const jsonStr = response.text || "{}";
+    const profile = JSON.parse(jsonStr);
+    
+    // Simple validation to fallback if JSON is malformed or empty
+    if (!profile.framingIntent) throw new Error("Empty framing profile");
+    
+    return profile as FramingProfile;
+  } catch (e) {
+    // Fallback profile if detection fails
+    return {
+      domain: "mixed",
+      framingIntent: "educational-neutral",
+      correctionTolerance: "medium",
+      authoritySource: "mixed",
+      audienceType: "general-public"
+    };
   }
-}
+};
 
 // --- 2. Orchestrator (Router) ---
 
-export const identifyExperts = async (userPrompt: string, files: FileAttachment[] = [], history: ChatTurn[] = []): Promise<ExpertProfile[]> => {
-  const expertListString = ALL_EXPERTS.map(e => `- ID: ${e.id} | Name: ${e.name} | Role: ${e.role} | Type: ${e.type}`).join('\n');
+export const identifyExperts = async (
+    userPrompt: string, 
+    files: FileAttachment[] = [], 
+    history: ChatTurn[] = [],
+    preferences?: UserPreferences,
+    framing?: FramingProfile
+): Promise<ExpertProfile[]> => {
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const expertListString = ALL_EXPERTS.filter(e => e.type !== 'critic').map(e => `- ID: ${e.id} | Name: ${e.name} | Role: ${e.role}`).join('\n');
+  
+  const memoryContext = preferences ? `
+    USER PREFERENCES (Persistent Memory):
+    - Role: ${preferences.persona}
+    - Style: ${preferences.style}
+    - Context: ${preferences.technicalContext}
+  ` : "";
 
-  let contextNote = "";
-  if (files.length > 0) {
-    contextNote = `USER HAS ATTACHED ${files.length} FILE(S): ${files.map(f => f.name + ' (' + f.mimeType + ')').join(', ')}.`;
-  }
-
-  // Summarize recent history
-  let historySummary = "";
-  if (history.length > 0) {
-    const recent = history.slice(-2);
-    historySummary = "\nRECENT CONVERSATION HISTORY:\n" + recent.map(t => `User: ${t.userPrompt}\nSystem: ${t.consensusContent.substring(0, 200)}...`).join('\n') + "\n";
-  }
+  const framingContext = framing ? `
+    Framing Context (DO NOT OVERRIDE):
+    ${JSON.stringify(framing, null, 2)}
+    Routing decision must respect the framing context.
+  ` : "";
 
   const routerPrompt = `
+    ${GLOBAL_SYSTEM_PROMPT}
+
     User Prompt: "${userPrompt}"
-    ${contextNote}
-    ${historySummary}
+    Attachments: ${files.length} file(s) attached.
+    ${memoryContext}
+    ${framingContext}
 
     Available Experts:
     ${expertListString}
 
     Task:
-    1. Analyze the user's intent and the conversation context.
-    2. Select the top 3 or 4 most relevant experts.
-       - If user asks to ANIMATE, create VIDEO, MOVIE, or motion, you MUST select 'veo-video'.
-       - If an Image is attached, MUST include 'gemini-analytical'.
-       - If the user explicitly asks to GENERATE or DRAW an IMAGE, you MUST select 'gemini-image'.
-       - If coding, prioritize Cursor, Copilot, Claude.
-       - Always include at least one Generalist (GPT-4o or Claude) for balance.
-    
-    Return JSON format only:
-    {
-      "selectedIds": ["id1", "id2", "id3"],
-      "reasoning": "Brief explanation why"
-    }
+    Select the top 2-3 experts most suited for this specific query.
+    Return JSON only: { "selectedIds": ["id1", "id2"], "reasoning": "..." }
   `;
 
   try {
-    const response = await generateContentWithRetry({
+    const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: routerPrompt,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-                selectedIds: {
-                    type: Type.ARRAY,
-                    items: { type: Type.STRING }
-                },
-                reasoning: { type: Type.STRING }
-            }
-        }
-      }
+      config: { responseMimeType: "application/json" }
     });
-
     const json = JSON.parse(response.text || "{}");
-    const ids = json.selectedIds || [];
-    
-    const selected = ids.map((id: string) => ALL_EXPERTS.find(e => e.id === id)).filter(Boolean) as ExpertProfile[];
-    
-    if (selected.length === 0) {
-      return GENERAL_EXPERTS;
-    }
-    return selected;
-
+    return (json.selectedIds || []).map((id: string) => ALL_EXPERTS.find(e => e.id === id)).filter(Boolean) as ExpertProfile[];
   } catch (e) {
-    console.error("Router failed", e);
-    return [GENERAL_EXPERTS[0]]; 
+    return [GENERAL_EXPERTS[0], GENERAL_EXPERTS[1]];
   }
 };
 
@@ -245,205 +222,96 @@ export const runWorkerModels = async (
   prompt: string, 
   files: FileAttachment[],
   history: ChatTurn[],
+  preferences: UserPreferences | undefined,
+  framing: FramingProfile | undefined,
   onUpdate: (results: WorkerResult[]) => void
 ): Promise<WorkerResult[]> => {
   
-  const results: WorkerResult[] = experts.map(expert => ({
-    expert,
-    content: '',
-    status: 'pending'
-  }));
-
+  const results: WorkerResult[] = experts.map(expert => ({ expert, content: '', status: 'pending' }));
   const updateResult = (index: number, partial: Partial<WorkerResult>) => {
     results[index] = { ...results[index], ...partial };
     onUpdate([...results]);
   };
 
-  const prunedHistory = history.slice(-5);
-  const previousHistory = formatHistoryForWorkers(prunedHistory);
+  const memoryContext = preferences ? `[CONTEXT: Act as ${preferences.persona}, style: ${preferences.style}] ` : "";
   
-  const currentContent = {
-    role: 'user',
-    parts: [
-      ...files.map(f => ({
-        inlineData: {
-          mimeType: f.mimeType,
-          data: f.data
-        }
-      })),
-      { text: prompt }
-    ]
-  };
+  // Universal Worker Prompt Prefix using Framing Profile
+  const framingInstruction = framing ? `
+FRAMING CONSTRAINTS:
+- Domain: ${framing.domain}
+- Intent: ${framing.framingIntent}
+- Correction Tolerance: ${framing.correctionTolerance}
+- Authority Source: ${framing.authoritySource}
+- Audience: ${framing.audienceType}
 
-  const fullContents = [...previousHistory, currentContent];
+RULES:
+- Do not challenge belief systems if correctionTolerance is LOW.
+- Use the authoritySource as the primary reference lens.
+- Match tone and structure to the audienceType.
+- Additive explanations are allowed; dismissive corrections are not.
+` : "";
+  
+  const fileParts = files.map(f => ({ inlineData: { data: f.data, mimeType: f.mimeType } }));
 
   const promises = experts.map(async (expert, index) => {
-    // Stagger execution
-    await delay((index * 2000) + 500);
-
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    await new Promise(r => setTimeout(r, index * 200));
     const startTime = performance.now();
+    
+    // Dynamically inject Global Prompt + Framing Prefix + Expert Logic
+    const fullSystemInstruction = `${GLOBAL_SYSTEM_PROMPT}\n${framingInstruction}\n${expert.systemInstruction}`;
+
     try {
-      
-      // --- VIDEO GENERATION (VEO) ---
       if (expert.type === 'video') {
-         // 1. Check if user has selected an API key (Required for Veo)
-         const win = window as any;
-         if (win.aistudio) {
-             const hasKey = await win.aistudio.hasSelectedApiKey();
-             if (!hasKey) {
-                 updateResult(index, {
-                     content: "Veo requires a paid API key selected via the interface.",
-                     status: 'error',
-                     requiresKeySelection: true
-                 });
-                 return results[index];
-             }
-         }
-
-         // 2. Create fresh instance for Veo call to ensure it uses the selected key
-         // "Create a new GoogleGenAI instance right before making an API call"
-         const videoAi = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
-         let operation;
-         try {
-             operation = await videoAi.models.generateVideos({
-                 model: expert.model,
-                 prompt: prompt,
-                 // If files are present, use the first image as input for img-to-video
-                 image: files.length > 0 && files[0].mimeType.startsWith('image/') ? {
-                     imageBytes: files[0].data,
-                     mimeType: files[0].mimeType
-                 } : undefined,
-                 config: {
-                     numberOfVideos: 1,
-                     resolution: '1080p',
-                     aspectRatio: '16:9'
-                 }
-             });
-         } catch (e: any) {
-             // Handle 404 "Requested entity was not found" specifically
-             if (e.message?.includes('Requested entity was not found') || e.message?.includes('404')) {
-                 updateResult(index, {
-                     content: "Veo API Error: Please select a valid paid API key from a Google Cloud Project with the API enabled.",
-                     status: 'error',
-                     requiresKeySelection: true
-                 });
-                 return results[index];
-             }
-             throw e;
-         }
-
-         // Polling loop
-         updateResult(index, { content: 'Rendering video (this may take 1-2 minutes)...' });
-         
-         while (!operation.done) {
-            await delay(5000); // Check every 5s
-            operation = await videoAi.operations.getVideosOperation({operation: operation});
-         }
-
-         const videoUri = operation.response?.generatedVideos?.[0]?.video?.uri;
-         if (!videoUri) throw new Error("Video generation completed but no URI returned.");
-
-         // Fetch the actual video bytes using the API Key
-         const vidResponse = await fetch(`${videoUri}&key=${process.env.API_KEY}`);
-         if (!vidResponse.ok) throw new Error("Failed to download generated video.");
-         
-         const blob = await vidResponse.blob();
-         // Convert to Base64 Data URI for display
-         const base64Video = await new Promise<string>((resolve) => {
-            const reader = new FileReader();
-            reader.onloadend = () => resolve(reader.result as string);
-            reader.readAsDataURL(blob);
+         let op = await ai.models.generateVideos({
+             model: expert.model, 
+             prompt: prompt, 
+             config: { numberOfVideos: 1, resolution: '1080p', aspectRatio: '16:9' }
          });
-
-         updateResult(index, {
-             content: `[System]: Successfully generated video.`,
-             videoUri: base64Video,
-             status: 'success',
-             executionTime: Math.round(performance.now() - startTime)
-         });
-         return results[index];
-      }
-
-      // --- IMAGE GENERATION ---
-      else if (expert.type === 'image') {
+         while (!op.done) { 
+             await new Promise(r => setTimeout(r, 10000)); 
+             op = await ai.operations.getVideosOperation({operation: op}); 
+         }
+         updateResult(index, { content: "Video generated.", videoUri: op.response?.generatedVideos?.[0]?.video?.uri, status: 'success', estimatedTokens: 500 });
+      } else if (expert.type === 'image') {
+        const res = await ai.models.generateContent({ model: expert.model, contents: prompt });
+        const img = res.candidates?.[0]?.content?.parts?.find(p => p.inlineData)?.inlineData?.data;
+        updateResult(index, { content: "Image generated.", images: img ? [img] : [], status: 'success', estimatedTokens: 250 });
+      } else {
         const response = await ai.models.generateContent({
-          model: expert.model, 
-          contents: { parts: [{ text: prompt }] },
-          config: {
-            imageConfig: { aspectRatio: '16:9' }
-          }
-        });
-
-        const generatedImages: string[] = [];
-        let textResponse = "";
-
-        if (response.candidates?.[0]?.content?.parts) {
-            for (const part of response.candidates[0].content.parts) {
-                if (part.inlineData && part.inlineData.data) {
-                    generatedImages.push(part.inlineData.data);
-                } else if (part.text) {
-                    textResponse += part.text;
-                }
-            }
-        }
-        
-        updateResult(index, {
-          content: `[System]: Successfully generated ${generatedImages.length} image(s). ${textResponse}`,
-          images: generatedImages,
-          status: 'success',
-          executionTime: Math.round(performance.now() - startTime)
-        });
-        return results[index];
-      } 
-      
-      // --- TEXT GENERATION ---
-      else {
-        const tools = expert.tools?.includes('googleSearch') ? [{ googleSearch: {} }] : undefined;
-
-        const response = await generateContentWithRetry({
           model: expert.model,
-          contents: fullContents, 
-          config: {
-            systemInstruction: expert.systemInstruction,
-            temperature: 0.7,
-            tools: tools
+          contents: { parts: [...fileParts, { text: memoryContext + prompt }] },
+          config: { 
+              systemInstruction: fullSystemInstruction, 
+              tools: expert.tools?.includes('googleSearch') ? [{googleSearch:{}}] : undefined 
           }
-        }, 5, 4000);
-
-        const text = response.text || "No response generated.";
-        
-        const groundingUrls: { title: string; uri: string }[] = [];
-        const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
-        if (chunks) {
-            chunks.forEach((chunk: any) => {
-                if (chunk.web?.uri) {
-                    groundingUrls.push({
-                        title: chunk.web.title || new URL(chunk.web.uri).hostname,
-                        uri: chunk.web.uri
-                    });
-                }
-            });
-        }
-
-        updateResult(index, {
-          content: text,
-          status: 'success',
-          executionTime: Math.round(performance.now() - startTime),
-          groundingUrls: groundingUrls.length > 0 ? groundingUrls : undefined
         });
         
-        return results[index];
-      }
+        let content = response.text || "";
+        let actionDraft;
+        let groundingUrls = response.candidates?.[0]?.groundingMetadata?.groundingChunks
+            ?.map((chunk: any) => chunk.web)
+            .filter(Boolean);
+        
+        const jsonMatch = content.match(/```json\n([\s\S]*?)\n```/);
+        if (jsonMatch) {
+            try {
+                const actionData = JSON.parse(jsonMatch[1]);
+                if (actionData.action === 'draft_action') actionDraft = actionData;
+            } catch {}
+        }
 
-    } catch (error) {
-      console.error(`Error in worker ${expert.name}:`, error);
-      updateResult(index, {
-        content: `Error: Failed to fetch response. (${(error as Error).message})`,
-        status: 'error',
-        executionTime: Math.round(performance.now() - startTime)
-      });
-      return results[index];
+        updateResult(index, { 
+          content, 
+          status: 'success', 
+          actionDraft, 
+          groundingUrls, 
+          executionTime: Math.round(performance.now() - startTime),
+          estimatedTokens: estimateTokens(content)
+        });
+      }
+    } catch (e: any) {
+      updateResult(index, { content: `Error: ${e.message}`, status: 'error' });
     }
   });
 
@@ -455,105 +323,105 @@ export const runWorkerModels = async (
 
 export const streamJudgeConsensus = async (
   originalPrompt: string,
-  files: FileAttachment[],
   workerResults: WorkerResult[],
   history: ChatTurn[],
+  preferences: UserPreferences | undefined,
+  framing: FramingProfile | undefined,
   onChunk: StreamChunkHandler
-) => {
-  const validResponses = workerResults.filter(r => r.status === 'success');
+): Promise<number> => {
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const inputs = workerResults.filter(r => r.status === 'success').map(r => `[${r.expert.name}]: ${r.content}`).join('\n\n');
+  
+  const framingContext = framing ? `\nCONTEXTUAL FRAMING:\n${JSON.stringify(framing)}\n` : "";
 
-  if (validResponses.length === 0) {
-    onChunk("Error: No valid responses were received from the worker models.");
-    return;
-  }
+  const sysInstr = `
+    ${GLOBAL_SYSTEM_PROMPT}
+    ${framingContext}
 
-  let inputsContext = "";
-  validResponses.forEach((r, i) => {
-    if (r.expert.type === 'image') {
-      inputsContext += `\n--- SOURCE: ${r.expert.name} (IMAGE GENERATOR) ---\n[System]: I have generated an image. Tell user to check the Expert Deliberation section.\n`;
-    } else if (r.expert.type === 'video') {
-      inputsContext += `\n--- SOURCE: ${r.expert.name} (VIDEO GENERATOR) ---\n[System]: I have generated a video. Tell user to check the Expert Deliberation section to watch it.\n`;
-    } else {
-      inputsContext += `\n--- SOURCE: ${r.expert.name} (${r.expert.role}) ---\n${r.content}\n`;
-      if (r.groundingUrls && r.groundingUrls.length > 0) {
-        inputsContext += `[Sources Used]: ${r.groundingUrls.map(u => u.uri).join(', ')}\n`;
-      }
-    }
-  });
+    You are the Synthesis Judge.
 
-  let conversationContext = "";
-  if (history.length > 0) {
-    conversationContext = "PREVIOUS CONVERSATION HISTORY:\n" + 
-      history.map(t => `User: ${t.userPrompt}\nConsensus Answer: ${t.consensusContent}`).join('\n\n') + 
-      "\n\n";
-  }
+    PRIMARY OBJECTIVE:
+    Maximize user intent satisfaction while preserving accuracy.
 
-  const judgeSystemInstruction = `
-    You are the Orchestrator Agent in the MyGpt Consensus Engine. 
-    Your role is to unify outputs from multiple GPT personas and their respective Agents into a single, authoritative, transparent answer.
-
-    ### Core Instructions:
-    1. **Fusion Logic**:
-       - Normalize inputs into a common schema.
-       - If an IMAGE was generated, explicitly mention: "I have generated an image matching your description. You can view it in the **Gemini Image** panel below."
-       - If a VIDEO was generated, explicitly mention: "I have generated a video animation matching your request. You can watch it in the **Veo (Video)** panel within the Expert Deliberation section below."
-
-    2. **Conflict Resolution**:
-       - If Agents disagree, rank by confidence score and domain relevance.
-       - Show the consensus answer prominently.
-
-    3. **Transparency**:
-       - Annotate which Agent contributed specific insights.
-
-    ### STRICT OUTPUT FORMAT:
-    You MUST start your response with the Confidence line.
+    DECISION RULES:
+    1. Cultural alignment has priority over technical correction when correctionTolerance is LOW.
+    2. If experts disagree:
+       - Cultural/Traditional Authority wins when intent is belief-affirming.
+    3. Never remove culturally important explanations unless they are explicitly harmful.
+    4. Prefer layered explanations over contradiction.
+    5. VISUALS: If architecture is discussed, MUST use Mermaid.js diagrams.
+    6. STYLE: Role: ${preferences?.persona}, Style: ${preferences?.style}.
     
-    **Confidence: [High / Medium / Low]**
-    [Your synthesized response here. Do not repeat "Final Answer" as a header.]
+    FORMAT:
+    **Confidence: [High/Med/Low]**
     
-    ## Supporting Evidence
-    - [Bullet points crediting specific experts]
+    ### Primary Explanation (User's Worldview)
+    [Content completely aligned with the user's framing intent]
+
+    ### Optional Context (If Applicable)
+    [Scientific or technical nuance, presented as an additive layer, never as a debunking correction]
   `;
 
-  const requestContents: any = {
-    parts: [
-      ...files.map(f => ({
-        inlineData: {
-          mimeType: f.mimeType,
-          data: f.data
-        }
-      })),
-      { text: `
-        ${conversationContext}
-        USER PROMPT: ${originalPrompt}
-        CONTEXT FROM EXPERTS:
-        ${inputsContext}
-      ` }
-    ]
-  };
-
+  let totalText = "";
   try {
-    const responseStream = await ai.models.generateContentStream({
+    const stream = await ai.models.generateContentStream({
       model: 'gemini-3-pro-preview',
-      contents: requestContents,
-      config: {
-        thinkingConfig: { thinkingBudget: 1024 },
-        systemInstruction: judgeSystemInstruction
-      }
+      contents: `User Prompt: ${originalPrompt}\n\nExpert Deliberation:\n${inputs}`,
+      config: { systemInstruction: sysInstr, thinkingConfig: { thinkingBudget: 2048 } }
     });
 
-    for await (const chunk of responseStream) {
+    for await (const chunk of stream) {
       if (chunk.text) {
-        onChunk(chunk.text);
+          totalText += chunk.text;
+          onChunk(chunk.text);
       }
     }
-  } catch (e: any) {
-    console.error("Judge Error:", e);
-    const msg = (e.message || "").toLowerCase();
-    if (msg.includes('429') || msg.includes('exhausted')) {
-         onChunk("\n\n[System Error: Rate limit reached during Consensus. Please wait a moment and try again.]");
-    } else {
-         onChunk("\n\n[System Error: The Consensus Judge encountered an error while synthesizing.]");
-    }
+    return estimateTokens(totalText);
+  } catch (e) {
+    onChunk("Synthesis Error. Please retry.");
+    return 0;
   }
+};
+
+// --- 5. Critic Review (Self-Correction) ---
+
+export const runCriticReview = async (
+    originalPrompt: string,
+    workerResults: WorkerResult[],
+    consensusContent: string,
+    framing?: FramingProfile
+): Promise<{ text: string; tokens: number }> => {
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const criticExpert = ALL_EXPERTS.find(e => e.id === 'auditor-critic')!;
+    const expertInputs = workerResults.filter(r => r.status === 'success').map(r => `[${r.expert.name}]: ${r.content}`).join('\n\n');
+    
+    const framingContext = framing ? `\nCONTEXTUAL FRAMING:\n${JSON.stringify(framing)}\n` : "";
+
+    const criticPrompt = `
+        User Request: "${originalPrompt}"
+        
+        Deliberation History:
+        ${expertInputs}
+        
+        Current Consensus Synthesis:
+        ${consensusContent}
+        
+        Task: 
+        Perform an audit of the Synthesis. Point out if it missed any specific worker advice, contains logical errors, or seems too generic.
+    `;
+
+    // Inject Global Prompt + Framing
+    const fullSystemInstruction = `${GLOBAL_SYSTEM_PROMPT}${framingContext}\n${criticExpert.systemInstruction}`;
+
+    try {
+        const response = await ai.models.generateContent({
+            model: criticExpert.model,
+            contents: criticPrompt,
+            config: { systemInstruction: fullSystemInstruction }
+        });
+        const text = response.text || "No audit notes recorded.";
+        return { text, tokens: estimateTokens(text) };
+    } catch (e) {
+        return { text: "Auditor unavailable.", tokens: 0 };
+    }
 };

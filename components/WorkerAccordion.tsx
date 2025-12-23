@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -7,197 +8,105 @@ import { WorkerResult } from '../types';
 
 const WorkerCard: React.FC<{ result: WorkerResult }> = ({ result }) => {
   const [isOpen, setIsOpen] = useState(false);
+  const [isExecuted, setIsExecuted] = useState(false);
 
-  // Status colors
-  const statusColor = 
-    result.status === 'success' ? 'border-green-500/30 bg-green-900/10 text-green-400' :
-    result.status === 'error' ? 'border-red-500/30 bg-red-900/10 text-red-400' :
-    'border-blue-500/30 bg-blue-900/10 text-blue-400 animate-pulse';
-
-  const handleSelectKey = async () => {
-    if (window.aistudio) {
-        try {
-            await window.aistudio.openSelectKey();
-        } catch (e) {
-            console.error("Failed to open key selection dialog", e);
-        }
+  const handleExecute = () => {
+    if (!result.actionDraft) return;
+    
+    const { type, recipient, subject, body } = result.actionDraft;
+    
+    if (type === 'email') {
+        const mailto = `mailto:${recipient || ''}?subject=${encodeURIComponent(subject || 'Draft from Consensus Engine')}&body=${encodeURIComponent(body)}`;
+        window.open(mailto, '_blank');
+    } else {
+        navigator.clipboard.writeText(body);
+        alert('Action content copied to clipboard.');
     }
+    
+    setIsExecuted(true);
   };
 
   return (
     <div className={`border rounded-lg mb-3 overflow-hidden transition-all duration-200 ${isOpen ? 'border-slate-600 bg-slate-800/50' : 'border-slate-800 bg-slate-900'}`}>
-      <button 
-        onClick={() => setIsOpen(!isOpen)}
-        className="w-full flex items-center justify-between p-4 text-left hover:bg-slate-800 transition-colors"
-      >
-        <div className="flex flex-col md:flex-row md:items-center gap-2 md:gap-4 overflow-hidden">
-          <div className="flex items-center gap-3">
-            <div className={`shrink-0 w-2 h-2 rounded-full ${result.status === 'success' ? 'bg-green-500' : result.status === 'error' ? 'bg-red-500' : 'bg-blue-500'}`} />
-            <span className="font-semibold text-slate-200 text-sm md:text-base truncate">{result.expert.name}</span>
-          </div>
-          <span className="hidden md:inline text-slate-600">|</span>
-          <span className="text-xs text-brand-400 font-mono uppercase tracking-wide truncate max-w-[200px] md:max-w-none">
-            {result.expert.role}
-          </span>
-          {result.groundingUrls && result.groundingUrls.length > 0 && (
-             <span className="hidden md:flex items-center gap-1 text-[10px] bg-slate-800 text-slate-400 px-2 py-0.5 rounded-full border border-slate-700">
-                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
-                Verified
-             </span>
-          )}
-          {result.executionTime && (
-            <span className="text-xs text-slate-500 font-mono ml-auto md:ml-2">
-              {result.executionTime}ms
-            </span>
-          )}
+      <button onClick={() => setIsOpen(!isOpen)} className="w-full flex items-center justify-between p-4 text-left hover:bg-slate-800 transition-colors">
+        <div className="flex items-center gap-4">
+           <div className={`w-2 h-2 rounded-full ${result.status === 'success' ? 'bg-green-500' : 'bg-blue-500'}`} />
+           <span className="font-semibold text-slate-200">{result.expert.name}</span>
+           <span className="text-[10px] text-brand-400 font-mono uppercase tracking-widest">{result.expert.role}</span>
         </div>
-        <div className="flex items-center gap-2 pl-2">
-            <span className={`text-[10px] md:text-xs px-2 py-0.5 rounded border ${statusColor}`}>
-                {result.status.toUpperCase()}
-            </span>
-            <svg className={`w-4 h-4 text-slate-400 transform transition-transform ${isOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-            </svg>
+        <div className="flex items-center gap-3">
+            {result.estimatedTokens && <span className="text-[10px] text-slate-500 font-mono">~{result.estimatedTokens} tokens</span>}
+            {result.executionTime && <span className="text-[10px] text-slate-500 font-mono">{result.executionTime}ms</span>}
+            <svg className={`w-4 h-4 text-slate-400 transform transition-transform ${isOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
         </div>
       </button>
       
       {isOpen && (
         <div className="p-4 border-t border-slate-700/50 bg-slate-950/30">
-            <div className="mb-4 flex flex-wrap items-center gap-3 text-xs text-slate-500 italic">
-                <div className="flex items-center gap-2">
-                    <span className="bg-slate-800 px-2 py-0.5 rounded text-slate-400">Persona</span>
-                    {result.expert.description}
-                </div>
-            </div>
-
-            {/* API Key Selection Action */}
-            {result.requiresKeySelection && (
-                <div className="mb-6 bg-yellow-500/10 border border-yellow-500/30 p-4 rounded-lg">
-                    <h4 className="text-yellow-400 font-bold text-sm mb-2 flex items-center gap-2">
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
-                        Action Required
-                    </h4>
-                    <p className="text-slate-300 text-sm mb-3">
-                        Generating videos with Veo requires a paid API key. Please select a project with billing enabled.
-                    </p>
-                    <div className="flex items-center gap-4">
-                        <button 
-                            onClick={handleSelectKey}
-                            className="bg-brand-600 hover:bg-brand-500 text-white text-xs px-3 py-2 rounded-lg font-medium flex items-center gap-2 transition-colors"
-                        >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" /></svg>
-                            Select Paid API Key
-                        </button>
-                        <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" rel="noopener noreferrer" className="text-xs text-brand-400 hover:text-brand-300 underline">
-                            View Billing Docs
-                        </a>
+            {result.actionDraft && (
+                <div className="mb-6 p-4 bg-indigo-500/10 border border-indigo-500/30 rounded-xl relative overflow-hidden group">
+                    <div className="absolute top-0 right-0 p-2 text-[10px] font-bold text-indigo-400/50 uppercase tracking-tighter">Action Draft</div>
+                    <div className="flex items-center gap-3 mb-3">
+                        <div className="p-2 bg-indigo-600 rounded-lg text-white">
+                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
+                        </div>
+                        <div>
+                            <h4 className="text-white font-bold text-sm">Drafted {result.actionDraft.type}</h4>
+                            <p className="text-xs text-indigo-400">Target: {result.actionDraft.recipient || 'Local Browser/Mail'}</p>
+                        </div>
                     </div>
-                </div>
-            )}
-            
-            {/* Video Display (Veo) */}
-            {result.videoUri && (
-                <div className="mb-6 rounded-lg overflow-hidden border border-slate-700 bg-black">
-                    <video 
-                        src={result.videoUri} 
-                        controls 
-                        autoPlay
-                        loop
-                        className="w-full h-auto max-h-[400px]"
-                    />
-                    <div className="p-2 bg-slate-900 border-t border-slate-800 flex justify-end">
-                        <a 
-                            href={result.videoUri}
-                            download={`veo-video-${Date.now()}.mp4`}
-                            className="text-xs text-brand-400 hover:text-brand-300 flex items-center gap-1"
-                        >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
-                            Download MP4
-                        </a>
+                    <div className="bg-black/20 p-3 rounded-lg text-xs text-slate-300 mb-4 font-mono whitespace-pre-wrap italic border border-white/5">
+                        "{result.actionDraft.body}"
                     </div>
-                </div>
-            )}
-
-            {/* Image Display */}
-            {result.images && result.images.length > 0 && (
-              <div className="mb-6 grid grid-cols-1 gap-4">
-                {result.images.map((img, idx) => (
-                  <div key={idx} className="relative rounded-lg overflow-hidden border border-slate-700 group">
-                    <img 
-                      src={`data:image/jpeg;base64,${img}`} 
-                      alt={`Generated by ${result.expert.name}`} 
-                      className="w-full h-auto object-cover"
-                    />
-                    <a 
-                      href={`data:image/jpeg;base64,${img}`}
-                      download={`generated-image-${Date.now()}.jpg`}
-                      className="absolute top-2 right-2 bg-slate-900/80 text-white p-2 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black"
-                      title="Download Image"
+                    <button 
+                        onClick={handleExecute}
+                        className={`w-full py-2 rounded-lg font-bold text-sm transition-all flex items-center justify-center gap-2 ${isExecuted ? 'bg-green-600 text-white' : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-500/20'}`}
                     >
-                       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
-                    </a>
-                  </div>
-                ))}
-              </div>
+                        {isExecuted ? 'Executed ✓' : result.actionDraft.type === 'email' ? 'Open in Mail Client' : 'Copy to Clipboard'}
+                    </button>
+                </div>
+            )}
+
+            {result.images && result.images.map((img, i) => (
+                <div key={i} className="mb-4 rounded-lg border border-slate-700 overflow-hidden shadow-xl"><img src={`data:image/jpeg;base64,${img}`} className="w-full" /></div>
+            ))}
+            
+            {result.videoUri && (
+                <div className="mb-4 rounded-lg border border-slate-700 overflow-hidden shadow-xl">
+                    <video controls src={`${result.videoUri}&key=${process.env.API_KEY}`} className="w-full" />
+                </div>
             )}
             
-            {/* Grounding Sources */}
+            <div className="prose prose-invert prose-sm max-w-none">
+                <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>
+                    {result.content}
+                </ReactMarkdown>
+            </div>
+            
             {result.groundingUrls && result.groundingUrls.length > 0 && (
-                <div className="mb-4 p-3 bg-slate-900/50 rounded-lg border border-slate-800">
-                    <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-2">
-                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /></svg>
-                        Sources
-                    </div>
+                <div className="mt-4 pt-4 border-t border-slate-800">
+                    <p className="text-[10px] text-slate-500 uppercase font-bold mb-2">Sources Found:</p>
                     <div className="flex flex-wrap gap-2">
-                        {result.groundingUrls.map((source, i) => (
-                            <a 
-                                key={i} 
-                                href={source.uri} 
-                                target="_blank" 
-                                rel="noopener noreferrer"
-                                className="inline-flex items-center gap-1.5 px-2 py-1 rounded bg-slate-800 text-blue-400 hover:text-blue-300 text-xs transition-colors truncate max-w-[200px]"
-                            >
-                                <span className="truncate">{source.title}</span>
+                        {result.groundingUrls.map((g, i) => (
+                            <a key={i} href={g.uri} target="_blank" rel="noreferrer" className="text-[10px] bg-slate-800 text-brand-400 px-2 py-1 rounded hover:bg-slate-700 transition-colors truncate max-w-[150px]">
+                                {g.title || g.uri}
                             </a>
                         ))}
                     </div>
                 </div>
             )}
-
-            <div className="text-slate-300 text-sm">
-             {result.content ? (
-                <ReactMarkdown 
-                    remarkPlugins={[remarkGfm, remarkMath]}
-                    rehypePlugins={[rehypeKatex]}
-                    className="prose prose-invert prose-sm max-w-none 
-                        prose-pre:bg-black/50 prose-pre:border prose-pre:border-slate-800
-                        prose-code:text-brand-200 prose-code:before:content-none prose-code:after:content-none
-                        prose-a:text-brand-400"
-                >
-                    {result.content}
-                </ReactMarkdown>
-             ) : (
-                 <span className="animate-pulse text-slate-500">Waiting for response...</span>
-             )}
-          </div>
         </div>
       )}
     </div>
   );
 };
 
-export const WorkerAccordion: React.FC<{ results: WorkerResult[] }> = ({ results }) => {
-  return (
+export const WorkerAccordion: React.FC<{ results: WorkerResult[] }> = ({ results }) => (
     <div className="mt-8 border-t border-slate-800 pt-8">
-      <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4 flex items-center gap-2">
-        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" /></svg>
-        Expert Deliberation ({results.length})
+      <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-4 flex items-center gap-2">
+        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
+        Parallel Deliberation Streams
       </h3>
-      <div className="grid grid-cols-1 gap-2">
-        {results.map((result) => (
-          <WorkerCard key={result.expert.id} result={result} />
-        ))}
-      </div>
+      {results.map(r => <WorkerCard key={r.expert.id} result={r} />)}
     </div>
-  );
-};
+);

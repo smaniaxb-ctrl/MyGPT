@@ -1,371 +1,339 @@
+
 import React, { useState, useRef, useEffect } from 'react';
-import { identifyExperts, runWorkerModels, streamJudgeConsensus } from './services/consensusService';
+import { identifyExperts, runWorkerModels, streamJudgeConsensus, runCriticReview, detectFraming } from './services/consensusService';
 import { ConsensusDisplay } from './components/ConsensusDisplay';
 import { WorkerAccordion } from './components/WorkerAccordion';
-import { ChatTurn, FileAttachment } from './types';
+import { ChatTurn, FileAttachment, UserPreferences, ChatSession, FramingProfile } from './types';
+
+const STORAGE_KEY_PREFS = 'consensus_prefs';
+const STORAGE_KEY_SESSIONS = 'consensus_sessions';
 
 const App: React.FC = () => {
   const [prompt, setPrompt] = useState('');
   const [attachments, setAttachments] = useState<FileAttachment[]>([]);
-  
-  // State is now a list of turns (chat history)
-  const [turns, setTurns] = useState<ChatTurn[]>([]);
+  const [activeSessionId, setActiveSessionId] = useState<string>(Date.now().toString());
+  const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isMemoryOpen, setIsMemoryOpen] = useState(false);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const [hasApiKey, setHasApiKey] = useState(true);
+
+  // Persistent Memory State
+  const [preferences, setPreferences] = useState<UserPreferences>(() => {
+    const saved = localStorage.getItem(STORAGE_KEY_PREFS);
+    return saved ? JSON.parse(saved) : {
+      persona: 'Professional Consultant',
+      style: 'Logical & Structured',
+      technicalContext: 'General knowledge',
+      memoryEnabled: true
+    };
+  });
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Auto-scroll logic
+  // Initialization & Persistence
   useEffect(() => {
-    if (isProcessing || turns.length > 0) {
-        window.scrollTo({ 
-            top: document.documentElement.scrollHeight, 
-            behavior: 'smooth' 
-        });
+    const savedSessions = localStorage.getItem(STORAGE_KEY_SESSIONS);
+    if (savedSessions) {
+      const parsed = JSON.parse(savedSessions);
+      setSessions(parsed);
+      if (parsed.length > 0) setActiveSessionId(parsed[0].id);
+    } else {
+      const firstSession: ChatSession = { id: activeSessionId, title: 'New Conversation', turns: [], updatedAt: Date.now() };
+      setSessions([firstSession]);
     }
-  }, [turns, isProcessing]);
 
-  // Auto-expand textarea
+    const checkKey = async () => {
+      const win = window as any;
+      if (win.aistudio) setHasApiKey(await win.aistudio.hasSelectedApiKey());
+    };
+    checkKey();
+  }, []);
+
   useEffect(() => {
-    if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto';
-      const scrollHeight = textareaRef.current.scrollHeight;
-      textareaRef.current.style.height = `${Math.min(scrollHeight, 200)}px`;
+    localStorage.setItem(STORAGE_KEY_PREFS, JSON.stringify(preferences));
+  }, [preferences]);
+
+  useEffect(() => {
+    if (sessions.length > 0) {
+      localStorage.setItem(STORAGE_KEY_SESSIONS, JSON.stringify(sessions));
     }
-  }, [prompt]);
+  }, [sessions]);
+
+  useEffect(() => {
+    if (isProcessing) window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'smooth' });
+  }, [isProcessing]);
+
+  const activeSession = sessions.find(s => s.id === activeSessionId) || sessions[0];
+  const turns = activeSession?.turns || [];
+
+  const createNewSession = () => {
+    const newId = Date.now().toString();
+    const newSession: ChatSession = { id: newId, title: 'New Conversation', turns: [], updatedAt: Date.now() };
+    setSessions([newSession, ...sessions]);
+    setActiveSessionId(newId);
+    setIsHistoryOpen(false);
+  };
+
+  const deleteSession = (id: string) => {
+    const filtered = sessions.filter(s => s.id !== id);
+    if (filtered.length === 0) {
+        createNewSession();
+    } else {
+        setSessions(filtered);
+        if (id === activeSessionId) setActiveSessionId(filtered[0].id);
+    }
+  };
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      const newAttachments: FileAttachment[] = [];
-      
+    if (e.target.files) {
+      const newFiles: FileAttachment[] = [];
       for (let i = 0; i < e.target.files.length; i++) {
         const file = e.target.files[i];
-        
-        // Convert to base64
         const reader = new FileReader();
-        await new Promise<void>((resolve) => {
-            reader.onload = (evt) => {
-                const result = evt.target?.result as string;
-                // Strip the data url prefix to get just the base64
-                const base64Data = result.split(',')[1];
-                
-                newAttachments.push({
-                    name: file.name,
-                    mimeType: file.type,
-                    data: base64Data
-                });
-                resolve();
-            };
-            reader.readAsDataURL(file);
+        await new Promise<void>(r => {
+          reader.onload = (evt) => {
+            newFiles.push({ name: file.name, mimeType: file.type, data: (evt.target?.result as string).split(',')[1] });
+            r();
+          };
+          reader.readAsDataURL(file);
         });
       }
-      
-      setAttachments(prev => [...prev, ...newAttachments]);
+      setAttachments(prev => [...prev, ...newFiles]);
     }
-    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  const removeAttachment = (index: number) => {
-    setAttachments(prev => prev.filter((_, i) => i !== index));
-  };
-
-  const handleSubmit = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    if ((!prompt.trim() && attachments.length === 0) || isProcessing) return;
+  const handleSubmit = async () => {
+    if (!prompt.trim() && attachments.length === 0) return;
 
     const currentPrompt = prompt;
     const currentAttachments = [...attachments];
-    
-    // Clear Input immediately
-    setPrompt('');
-    setAttachments([]);
-    if (textareaRef.current) textareaRef.current.style.height = 'auto';
+    setPrompt(''); setAttachments([]); setIsProcessing(true);
 
-    setIsProcessing(true);
-
-    // Create new turn
     const newTurn: ChatTurn = {
       id: Date.now().toString(),
       userPrompt: currentPrompt,
       attachments: currentAttachments,
-      step: 'routing',
+      step: 'framing',
       selectedExperts: [],
       workerResults: [],
       consensusContent: '',
-      timestamp: Date.now()
+      timestamp: Date.now(),
+      totalTokens: 0,
+      preferencesAtTime: { ...preferences }
     };
 
-    setTurns(prev => [...prev, newTurn]);
+    const updateSession = (updatedTurn: Partial<ChatTurn>) => {
+      setSessions(prev => prev.map(s => {
+        if (s.id !== activeSessionId) return s;
+        const turnsCopy = [...s.turns];
+        const turnIndex = turnsCopy.findIndex(t => t.id === newTurn.id);
+        if (turnIndex === -1) return s;
+        
+        turnsCopy[turnIndex] = { ...turnsCopy[turnIndex], ...updatedTurn };
+        return { 
+          ...s, 
+          turns: turnsCopy, 
+          title: s.turns.length === 1 && s.title === 'New Conversation' ? currentPrompt.substring(0, 30) + '...' : s.title,
+          updatedAt: Date.now() 
+        };
+      }));
+    };
+
+    setSessions(prev => prev.map(s => s.id === activeSessionId ? { ...s, turns: [...s.turns, newTurn] } : s));
 
     try {
-      // 1. Get History (exclude current incomplete turn)
-      // Note: React state update is async, but we can use the previous 'turns' from the scope 
-      // before we added the new one, which is exactly what we want (history = previous turns).
-      // However, we need to access the LATEST state in the async chain if we wanted to be perfectly safe,
-      // but 'turns' variable here refers to the state at render time. 
-      // Best practice: Use a local variable for history.
-      const history = [...turns];
+      // 0. Framing Detection (Guardrails)
+      const framingProfile = await detectFraming(currentPrompt);
+      updateSession({ step: 'routing', framingProfile });
 
-      // Update helper
-      const updateCurrentTurn = (updates: Partial<ChatTurn>) => {
-        setTurns(prev => {
-           const newHistory = [...prev];
-           const lastIdx = newHistory.length - 1;
-           if (lastIdx >= 0) {
-             newHistory[lastIdx] = { ...newHistory[lastIdx], ...updates };
-           }
-           return newHistory;
-        });
-      };
+      // 1. Routing
+      const experts = await identifyExperts(currentPrompt, currentAttachments, turns, preferences, framingProfile);
+      updateSession({ step: 'gathering', selectedExperts: experts });
 
-      // Step 1: Routing
-      const experts = await identifyExperts(currentPrompt, currentAttachments, history);
+      // 2. Gathering
+      const workers = await runWorkerModels(experts, currentPrompt, currentAttachments, turns, preferences, framingProfile, (res) => updateSession({ workerResults: res }));
+      const workerTokens = workers.reduce((acc, w) => acc + (w.estimatedTokens || 0), 0);
+      updateSession({ step: 'judging', workerResults: workers, totalTokens: workerTokens });
+
+      // 3. Judging (Streaming)
+      const judgeTokens = await streamJudgeConsensus(currentPrompt, workers, turns, preferences, framingProfile, (chunk) => {
+        setSessions(p => p.map(s => {
+            if (s.id !== activeSessionId) return s;
+            const newTurns = [...s.turns];
+            const turnIndex = newTurns.findIndex(t => t.id === newTurn.id);
+            newTurns[turnIndex].consensusContent += chunk;
+            return { ...s, turns: newTurns };
+        }));
+      });
       
-      updateCurrentTurn({ 
-        step: 'gathering', 
-        selectedExperts: experts,
-        workerResults: experts.map(e => ({ expert: e, content: '', status: 'pending' }))
+      const currentConsensus = (sessions.find(s => s.id === activeSessionId)?.turns.find(t => t.id === newTurn.id)?.consensusContent) || "";
+      updateSession({ step: 'criticizing', totalTokens: workerTokens + judgeTokens });
+
+      // 4. Criticizing (Self-Correction)
+      const criticResult = await runCriticReview(currentPrompt, workers, currentConsensus, framingProfile);
+      updateSession({ 
+        step: 'complete', 
+        criticContent: criticResult.text, 
+        totalTokens: workerTokens + judgeTokens + criticResult.tokens 
       });
 
-      // Step 2: Parallel Execution
-      // We pass 'history' which contains only completed previous turns
-      const workers = await runWorkerModels(experts, currentPrompt, currentAttachments, history, (currentResults) => {
-        updateCurrentTurn({ workerResults: currentResults });
-      });
-
-      // Step 3: Judging
-      updateCurrentTurn({ step: 'judging', workerResults: workers });
-
-      await streamJudgeConsensus(currentPrompt, currentAttachments, workers, history, (chunk) => {
-        setTurns(prev => {
-            const newHistory = [...prev];
-            const lastIdx = newHistory.length - 1;
-            if (lastIdx >= 0) {
-                // simple append
-                const currentContent = newHistory[lastIdx].consensusContent + chunk;
-                newHistory[lastIdx] = { ...newHistory[lastIdx], consensusContent: currentContent };
-            }
-            return newHistory;
-        });
-      });
-
-      updateCurrentTurn({ step: 'complete' });
-
-    } catch (error) {
-      console.error("Workflow failed", error);
-      setTurns(prev => {
-         const newHistory = [...prev];
-         const lastIdx = newHistory.length - 1;
-         if (lastIdx >= 0) {
-             newHistory[lastIdx] = { ...newHistory[lastIdx], step: 'error', error: "An unexpected error occurred." };
-         }
-         return newHistory;
-      });
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSubmit();
-    }
-  };
-
-  const handleClear = () => {
-    setPrompt('');
-    setAttachments([]);
-    setTurns([]); // Fully clear chat
-    setIsProcessing(false);
-    if (textareaRef.current) {
-        textareaRef.current.style.height = 'auto';
-    }
+    } catch (e) {
+      updateSession({ step: 'error', error: "Critical process failure." });
+    } finally { setIsProcessing(false); }
   };
 
   return (
-    <div className="min-h-screen bg-dark-950 font-sans text-slate-300 selection:bg-brand-500/30">
-      
-      {/* Header */}
-      <header className="sticky top-0 z-50 bg-dark-950/80 backdrop-blur-md border-b border-slate-800">
-        <div className="max-w-5xl mx-auto px-4 py-4 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-                <div className="w-8 h-8 bg-gradient-to-tr from-brand-500 to-purple-500 rounded-lg flex items-center justify-center text-white font-bold text-lg">M</div>
-                <h1 className="font-bold text-xl text-slate-100 tracking-tight">MyGpt</h1>
+    <div className="min-h-screen bg-dark-950 text-slate-300 font-sans selection:bg-brand-500/30">
+      <header className="sticky top-0 z-50 bg-dark-950/80 backdrop-blur-lg border-b border-slate-800">
+        <div className="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+                <button onClick={() => setIsHistoryOpen(true)} className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 transition-colors">
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h7" /></svg>
+                </button>
+                <div className="hidden sm:block">
+                    <h1 className="font-bold text-lg text-white tracking-tight">Consensus Engine</h1>
+                    <p className="text-[9px] text-slate-500 uppercase tracking-widest font-bold">Workspace v2.1 • Multi-Expert OS</p>
+                </div>
             </div>
-            <div className="flex gap-4">
-                 <button 
-                    onClick={handleClear}
-                    className="text-xs text-slate-500 hover:text-white transition-colors"
-                >
-                    Reset Chat
+            <div className="flex items-center gap-2">
+                <button onClick={() => setIsMemoryOpen(!isMemoryOpen)} className={`p-2 rounded-lg border transition-all flex items-center gap-2 text-xs font-bold ${isMemoryOpen ? 'bg-brand-600 border-brand-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white'}`}>
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 11c0 3.517-1.009 6.799-2.753 9.571m-3.44-2.04l.054-.09A10.003 10.003 0 0012 20m0 0c2.226 0 4.23-.89 5.707-2.333M12 7V3m0 0l3 3m-3-3l-3 3m0 0a10.003 10.003 0 0111.41 11.41M12 7c-3.517 0-6.799 1.009-9.571 2.753" /></svg>
+                    Context
                 </button>
             </div>
         </div>
       </header>
 
-      <main className="max-w-5xl mx-auto px-4 py-12 pb-72">
-        
-        {/* Intro / Empty State */}
+      {/* History Sidebar */}
+      {isHistoryOpen && (
+        <>
+            <div className="fixed inset-0 bg-black/60 z-[60] backdrop-blur-sm animate-in fade-in" onClick={() => setIsHistoryOpen(false)} />
+            <div className="fixed left-0 top-0 bottom-0 w-80 bg-slate-900 border-r border-slate-800 z-[70] p-6 shadow-2xl animate-in slide-in-from-left duration-300">
+                <div className="flex items-center justify-between mb-8">
+                    <h3 className="text-white font-bold flex items-center gap-2">
+                        <svg className="w-5 h-5 text-brand-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                        Session History
+                    </h3>
+                    <button onClick={createNewSession} className="p-2 bg-brand-600/20 text-brand-400 rounded-lg hover:bg-brand-600 hover:text-white transition-all">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                    </button>
+                </div>
+                <div className="space-y-2 overflow-y-auto max-h-[calc(100vh-150px)]">
+                    {sessions.map(s => (
+                        <div key={s.id} className="group relative">
+                            <button 
+                                onClick={() => { setActiveSessionId(s.id); setIsHistoryOpen(false); }}
+                                className={`w-full text-left p-3 rounded-xl border transition-all ${s.id === activeSessionId ? 'bg-brand-600/10 border-brand-500/50 text-white' : 'bg-slate-800/40 border-slate-800 text-slate-400 hover:border-slate-600 hover:text-slate-200'}`}
+                            >
+                                <p className="text-sm font-medium truncate pr-6">{s.title || 'Untitled'}</p>
+                                <p className="text-[10px] text-slate-500 mt-1">{new Date(s.updatedAt).toLocaleDateString()}</p>
+                            </button>
+                            <button 
+                                onClick={(e) => { e.stopPropagation(); deleteSession(s.id); }}
+                                className="absolute right-2 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 p-2 text-slate-500 hover:text-red-500 transition-all"
+                            >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                            </button>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        </>
+      )}
+
+      {/* Context Panel */}
+      {isMemoryOpen && (
+          <div className="max-w-5xl mx-auto px-6 mt-6 animate-in slide-in-from-top-4">
+              <div className="bg-slate-900 border border-brand-500/30 rounded-2xl p-6 shadow-2xl relative overflow-hidden">
+                <h3 className="text-white font-bold mb-4 flex items-center gap-2"><svg className="w-5 h-5 text-brand-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg> Global Settings</h3>
+                <div className="grid md:grid-cols-3 gap-6">
+                    <div><label className="text-[10px] uppercase font-bold text-slate-500 mb-1 block">Your Persona</label>
+                    <input value={preferences.persona} onChange={e => setPreferences({...preferences, persona: e.target.value})} className="w-full bg-dark-950 border border-slate-700 rounded-lg p-2 text-sm text-white focus:border-brand-500 outline-none" placeholder="e.g. Senior Architect" /></div>
+                    <div><label className="text-[10px] uppercase font-bold text-slate-500 mb-1 block">Style Bias</label>
+                    <input value={preferences.style} onChange={e => setPreferences({...preferences, style: e.target.value})} className="w-full bg-dark-950 border border-slate-700 rounded-lg p-2 text-sm text-white focus:border-brand-500 outline-none" placeholder="e.g. Technical & Dense" /></div>
+                    <div><label className="text-[10px] uppercase font-bold text-slate-500 mb-1 block">Tech Context</label>
+                    <input value={preferences.technicalContext} onChange={e => setPreferences({...preferences, technicalContext: e.target.value})} className="w-full bg-dark-950 border border-slate-700 rounded-lg p-2 text-sm text-white focus:border-brand-500 outline-none" placeholder="e.g. Node.js backend" /></div>
+                </div>
+              </div>
+          </div>
+      )}
+
+      <main className="max-w-5xl mx-auto px-6 py-12 pb-72">
         {turns.length === 0 && (
-           <div className="text-center mb-12 py-12">
-              <h2 className="text-4xl md:text-5xl font-extrabold text-white mb-6 tracking-tight">
-                The <span className="text-transparent bg-clip-text bg-gradient-to-r from-brand-400 to-purple-400">Wisdom of Crowds</span><br/> for AI.
-              </h2>
-              <p className="text-lg text-slate-400 max-w-2xl mx-auto">
-                Ask anything. We dynamically route your query to specialized AI experts and synthesize a consensus answer.
-              </p>
+           <div className="text-center mb-12 py-24">
+              <h2 className="text-5xl md:text-6xl font-extrabold text-white mb-6 tracking-tight leading-none">Intelligence via <br/><span className="text-transparent bg-clip-text bg-gradient-to-r from-brand-400 via-indigo-400 to-purple-400">Consensus</span></h2>
+              <p className="text-xl text-slate-400 max-w-2xl mx-auto font-medium italic">"Trust is built through diversity of opinion."</p>
            </div>
         )}
 
-        {/* Chat History */}
-        <div className="space-y-16">
-            {turns.map((turn, index) => (
+        <div className="space-y-24">
+            {turns.map(turn => (
                 <div key={turn.id} className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-                    
-                    {/* User Message Bubble */}
-                    <div className="flex justify-end mb-6">
-                        <div className="max-w-[80%] bg-slate-800 text-slate-100 px-6 py-4 rounded-2xl rounded-tr-none border border-slate-700 shadow-sm">
-                            <p className="whitespace-pre-wrap">{turn.userPrompt}</p>
-                            {turn.attachments.length > 0 && (
-                                <div className="mt-3 flex flex-wrap gap-2">
-                                    {turn.attachments.map((f, i) => (
-                                        <div key={i} className="text-xs bg-slate-900/50 px-2 py-1 rounded border border-slate-600 flex items-center gap-1">
-                                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>
-                                            {f.name}
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
+                    <div className="flex justify-end mb-10">
+                        <div className="max-w-[85%] bg-slate-800 text-slate-100 px-8 py-5 rounded-3xl rounded-tr-none border border-slate-700 shadow-2xl">
+                            <p className="whitespace-pre-wrap leading-relaxed">{turn.userPrompt}</p>
+                            {turn.attachments.length > 0 && <div className="mt-4 flex flex-wrap gap-2">{turn.attachments.map((f, i) => <div key={i} className="text-[9px] bg-dark-950/50 px-3 py-1.5 rounded-full border border-slate-600 text-brand-400 font-bold uppercase tracking-widest">{f.name}</div>)}</div>}
                         </div>
                     </div>
-
-                    {/* Status Bar for Routing Phase */}
-                    {turn.step === 'routing' && (
-                        <div className="flex items-center justify-center space-x-3 p-8">
-                            <div className="w-5 h-5 border-2 border-brand-500 border-t-transparent rounded-full animate-spin"></div>
-                            <span className="text-brand-400 font-mono text-sm">Analyzing intent and selecting experts...</span>
-                        </div>
-                    )}
-
-                    {/* Selected Experts Banner */}
-                    {turn.selectedExperts.length > 0 && (
-                        <div className="mb-4">
-                             <div className="text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-2 ml-1">Engaged Experts</div>
-                            <div className="flex flex-wrap gap-2">
-                                {turn.selectedExperts.map(exp => (
-                                    <span key={exp.id} className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-900 border border-slate-800 text-slate-400 text-xs font-medium">
-                                        <span>{exp.name}</span>
-                                    </span>
-                                ))}
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Main Content */}
-                    {(turn.step === 'gathering' || turn.step === 'judging' || turn.step === 'complete' || turn.step === 'error') && (
-                        <>
-                            <ConsensusDisplay 
-                                content={turn.consensusContent} 
-                                isThinking={turn.step === 'judging' || turn.step === 'gathering'} 
-                            />
-                            
-                            {turn.step === 'gathering' && (
-                                <div className="text-center text-sm text-slate-500 animate-pulse mt-4">
-                                    Waiting for expert responses...
-                                </div>
-                            )}
-                             
-                            {turn.error && (
-                                <div className="mt-4 p-4 bg-red-900/20 border border-red-900/50 rounded-lg text-red-400 text-sm">
-                                    {turn.error}
-                                </div>
-                            )}
-
-                            <WorkerAccordion results={turn.workerResults} />
-                        </>
-                    )}
+                    {turn.consensusContent || turn.step === 'judging' ? (
+                      <ConsensusDisplay 
+                        content={turn.consensusContent} 
+                        isThinking={turn.step === 'judging' || turn.step === 'criticizing'} 
+                        criticContent={turn.criticContent}
+                        totalTokens={turn.totalTokens}
+                      />
+                    ) : null}
+                    {turn.workerResults.length > 0 && <WorkerAccordion results={turn.workerResults} />}
+                    {turn.error && <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-xl text-red-500 text-sm mt-4">{turn.error}</div>}
                 </div>
             ))}
         </div>
-
       </main>
 
-      {/* Input Area */}
-      <div className="fixed bottom-0 left-0 right-0 bg-dark-950/90 backdrop-blur-lg border-t border-slate-800 p-4 md:p-6 z-40">
-        <div className="max-w-3xl mx-auto flex gap-3 items-end">
-            
-            {/* Hidden File Input */}
-            <input 
-                type="file" 
-                ref={fileInputRef} 
-                onChange={handleFileSelect} 
-                className="hidden" 
-                multiple 
-            />
-
-            {/* File Button */}
-             <button
-                onClick={() => fileInputRef.current?.click()}
-                type="button"
-                disabled={isProcessing}
-                className="mb-1 p-3.5 rounded-xl bg-slate-800 border border-slate-700 text-slate-400 hover:text-brand-400 hover:border-brand-500/50 hover:bg-slate-700 transition-all disabled:opacity-50 flex-shrink-0"
-                title="Attach Files"
-            >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
-                </svg>
-            </button>
-
-            <div className="relative flex-1">
-                {/* File Preview Chips */}
-                {attachments.length > 0 && (
-                    <div className="flex flex-wrap gap-2 mb-2 p-1">
-                        {attachments.map((file, idx) => (
-                            <div key={idx} className="flex items-center gap-2 bg-slate-800 text-slate-200 text-xs px-3 py-1.5 rounded-full border border-slate-700">
-                                <span className="truncate max-w-[150px]">{file.name}</span>
-                                <button onClick={() => removeAttachment(idx)} className="text-slate-500 hover:text-red-400">
-                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                                </button>
-                            </div>
-                        ))}
-                    </div>
-                )}
-
-                <textarea
-                    ref={textareaRef}
-                    value={prompt}
-                    onChange={(e) => setPrompt(e.target.value)}
-                    onKeyDown={handleKeyDown}
-                    disabled={isProcessing}
-                    rows={1}
-                    placeholder={attachments.length > 0 ? "Ask about these files..." : "Ask a question..."}
-                    className="w-full bg-slate-900 border border-slate-700 text-slate-200 placeholder-slate-500 rounded-xl py-4 pl-6 pr-40 focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 transition-all shadow-lg disabled:opacity-50 disabled:cursor-not-allowed resize-none overflow-hidden min-h-[56px] max-h-[200px]"
-                />
-                <button
-                    onClick={() => handleSubmit()}
-                    disabled={(!prompt.trim() && attachments.length === 0) || isProcessing}
-                    className="absolute right-2 bottom-2 bg-brand-600 hover:bg-brand-500 text-white font-medium rounded-lg px-4 py-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-                >
-                    {isProcessing ? (
-                        <>
-                            <svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                            </svg>
-                            <span className="hidden sm:inline">Processing</span>
-                        </>
-                    ) : (
-                        <>
-                            <span>Synthesize</span>
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-                        </>
+      <div className="fixed bottom-0 left-0 right-0 bg-dark-950/95 backdrop-blur-2xl border-t border-slate-800 p-6 z-40">
+        <div className="max-w-4xl mx-auto">
+            <div className="flex gap-4 items-end">
+                <input type="file" ref={fileInputRef} onChange={handleFileSelect} className="hidden" multiple />
+                <button onClick={() => fileInputRef.current?.click()} className="p-4 rounded-2xl bg-slate-800 border border-slate-700 text-slate-400 hover:text-brand-400 transition-all flex-shrink-0 shadow-lg hover:shadow-brand-500/10"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg></button>
+                <div className="relative flex-1">
+                    {attachments.length > 0 && (
+                        <div className="flex gap-2 mb-2">
+                            {attachments.map((f, i) => (
+                                <div key={i} className="group relative text-[9px] bg-brand-600/20 text-brand-400 px-3 py-1.5 rounded-full border border-brand-500/30 font-bold uppercase tracking-wider">
+                                    {f.name}
+                                    <button onClick={() => setAttachments(prev => prev.filter((_, idx) => idx !== i))} className="ml-2 hover:text-red-500 font-bold">×</button>
+                                </div>
+                            ))}
+                        </div>
                     )}
-                </button>
+                    <textarea 
+                        ref={textareaRef} 
+                        value={prompt} 
+                        onChange={e => setPrompt(e.target.value)} 
+                        onKeyDown={e => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), handleSubmit())} 
+                        placeholder="Deliberate on a complex problem..." 
+                        className="w-full bg-slate-900 border border-slate-700 text-slate-100 rounded-2xl py-5 pl-7 pr-40 focus:outline-none focus:ring-2 focus:ring-brand-500/50 shadow-2xl resize-none max-h-48" 
+                        rows={1} 
+                    />
+                    <button 
+                        onClick={handleSubmit} 
+                        disabled={isProcessing || (!prompt.trim() && attachments.length === 0)} 
+                        className="absolute right-3 bottom-3 bg-brand-600 hover:bg-brand-500 text-white font-bold rounded-xl px-6 py-3 transition-all flex items-center gap-2 shadow-lg shadow-brand-600/30 disabled:opacity-50 disabled:grayscale"
+                    >
+                        {isProcessing ? (
+                            <>
+                                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                Processing...
+                            </>
+                        ) : 'Synthesize'}
+                    </button>
+                </div>
             </div>
+            <p className="text-center text-[9px] text-slate-600 mt-4 uppercase tracking-[0.2em] font-bold">Orchestration Protocol v2.2 • Est. Token Monitor Enabled</p>
         </div>
       </div>
-
     </div>
   );
 };
