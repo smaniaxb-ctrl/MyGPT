@@ -39,13 +39,8 @@ const Mermaid: React.FC<{ chart: string }> = ({ chart }) => {
           });
         } catch (e) {
           // If syntax is invalid (e.g. incomplete streaming), it throws.
-          // We only show error if mounted.
           if (mounted && ref.current) {
              console.debug("Mermaid rendering incomplete or failed:", e);
-             // Optional: Display a small error or keep previous content?
-             // For now, we show a friendly message or just the raw code if it fails.
-             // Usually, returning the raw text is better so user can read it.
-             // But here we just leave it or show an error marker.
              ref.current.innerHTML = `<div class="text-xs text-red-400 font-mono bg-red-900/20 p-2 rounded border border-red-500/30">Diagram rendering...</div><pre class="text-[10px] text-slate-500 mt-2 opacity-50 overflow-hidden h-0">${chart}</pre>`;
           }
         }
@@ -59,8 +54,6 @@ const Mermaid: React.FC<{ chart: string }> = ({ chart }) => {
     };
   }, [chart, isMermaidReady]);
 
-  // Using key={chart} forces a fresh DOM node for every content change, 
-  // which is safer for Mermaid's destructive DOM manipulation.
   return (
     <div className="my-6 overflow-hidden">
        <div 
@@ -81,6 +74,7 @@ interface Props {
 
 export const ConsensusDisplay: React.FC<Props> = ({ content, isThinking, criticContent, totalTokens }) => {
   const [showCritic, setShowCritic] = useState(true);
+  const [shareState, setShareState] = useState<'idle' | 'copied' | 'shared'>('idle');
 
   const { confidence, cleanContent } = useMemo(() => {
     if (!content) return { confidence: null, cleanContent: '' };
@@ -89,6 +83,34 @@ export const ConsensusDisplay: React.FC<Props> = ({ content, isThinking, criticC
     let cleaned = content.replace(/(\*\*|)?Confidence:(\*\*|)?\s*(High|Medium|Low)/i, '').trim();
     return { confidence, cleanContent: cleaned };
   }, [content]);
+
+  const handleShare = async () => {
+    const textToShare = `MyGpt Consensus Verdict:\n\n${cleanContent}`;
+    
+    // 1. Try Native Share API (Mobile/Modern Browsers)
+    if (navigator.share) {
+        try {
+            await navigator.share({
+                title: 'MyGpt Consensus Verdict',
+                text: textToShare,
+            });
+            setShareState('shared');
+            setTimeout(() => setShareState('idle'), 2000);
+            return;
+        } catch (err) {
+            // User cancelled or not supported, fall through to clipboard
+        }
+    }
+
+    // 2. Fallback to Clipboard
+    try {
+        await navigator.clipboard.writeText(textToShare);
+        setShareState('copied');
+        setTimeout(() => setShareState('idle'), 2000);
+    } catch (err) {
+        console.error('Failed to copy', err);
+    }
+  };
 
   const components = {
     code({ node, inline, className, children, ...props }: any) {
@@ -118,7 +140,40 @@ export const ConsensusDisplay: React.FC<Props> = ({ content, isThinking, criticC
                 </div>
              </div>
           </div>
-          {isThinking && <div className="flex space-x-1"><div className="w-2 h-2 bg-brand-500 rounded-full animate-bounce"></div><div className="w-2 h-2 bg-brand-500 rounded-full animate-bounce delay-150"></div><div className="w-2 h-2 bg-brand-500 rounded-full animate-bounce delay-300"></div></div>}
+          
+          <div className="flex items-center gap-3">
+              {!isThinking && (
+                  <button 
+                    onClick={handleShare}
+                    className={`p-2 rounded-lg border transition-all duration-300 flex items-center gap-2 text-xs font-bold ${
+                        shareState === 'idle' 
+                        ? 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white hover:border-brand-500/50' 
+                        : 'bg-green-500/10 border-green-500/30 text-green-400'
+                    }`}
+                    title="Share Answer"
+                  >
+                    {shareState === 'idle' && (
+                        <>
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" /></svg>
+                            <span className="hidden sm:inline">Share</span>
+                        </>
+                    )}
+                    {shareState === 'copied' && (
+                        <>
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                            <span>Copied</span>
+                        </>
+                    )}
+                    {shareState === 'shared' && (
+                        <>
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" /></svg>
+                            <span>Sent</span>
+                        </>
+                    )}
+                  </button>
+              )}
+              {isThinking && <div className="flex space-x-1"><div className="w-2 h-2 bg-brand-500 rounded-full animate-bounce"></div><div className="w-2 h-2 bg-brand-500 rounded-full animate-bounce delay-150"></div><div className="w-2 h-2 bg-brand-500 rounded-full animate-bounce delay-300"></div></div>}
+          </div>
         </div>
 
         <div className="prose prose-invert prose-lg max-w-none prose-pre:p-0 prose-pre:bg-transparent">

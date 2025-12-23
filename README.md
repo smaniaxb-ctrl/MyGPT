@@ -1,93 +1,77 @@
 # MyGpt: The Consensus Engine
 
-MyGpt is a multi-agent orchestration app that uses the wisdom of crowds to deliver trusted AI answers.
+MyGpt is a sophisticated multi-agent orchestration platform that leverages parallel processing and "Wisdom of the Crowds" logic to deliver high-fidelity, hallucination-resistant, and culturally aware AI responses.
 
-## Why It Matters
-Instead of relying on one model, MyGpt queries multiple expert personas in parallel and synthesizes their outputs into a superior consensus answer.
+## 🚀 Overview
 
-## Current Status
-This repository contains the app’s design, workflow, and vision. Code implementation is open for contributors.
+Unlike traditional chatbots that rely on a single model's stream of consciousness, MyGpt employs a **Star Topology Architecture**:
+1.  **Detects** your worldview and intent (Framing).
+2.  **Routes** the query to specialized expert agents (Text, Image, Video, Actions).
+3.  **Synthesizes** a consensus verdict using a "Judge" model.
+4.  **Audits** the result with a "Critic" model before presenting it.
 
-## How You Can Help
-- **Developers**: Help turn this vision into a working React app.
-- **Supporters**: Fund hosting and API costs to launch MyGpt publicly.
-- **Collaborators**: Share ideas, improve personas, or design UI.
+## 🧠 Core Architecture
 
-## Contact
-Created by Jayaprakash. Reach out me at smaniaxb@gmail.com if you’d like to collaborate!
+The system operates in five distinct phases for every user prompt:
 
----
+### 1. Framing Detection (The Guardrail)
+Before answering, a specialized **Framing Agent** analyzes the user's intent to build a `FramingProfile`.
+*   **Cultural Preservation**: Identifies if the user is asking from a traditional, religious, or cultural standpoint.
+*   **Intent Analysis**: Distinguishes between "Belief-Affirming" queries and "Critical Analysis" requests.
+*   *Outcome*: Ensures the AI respects the user's worldview instead of dismissively "correcting" them.
 
-## 🧠 How It Works
+### 2. Intelligent Routing (The Manager)
+The **Router Agent** assesses the task requirements and recruits 2-3 specific experts from the registry:
+*   **Flash Generalist**: Speed and broad logic.
+*   **Pro Reasoner**: Deep, nuanced analysis for complex problems.
+*   **System Architect**: Generates visual diagrams using Mermaid.js.
+*   **Action Dispatcher**: Drafts JSON payloads for emails, tickets, or messages.
+*   **Gemini Image**: Generates high-fidelity static imagery.
+*   **Veo (Video)**: Generates 1080p motion video content.
 
-MyGpt operates on a multi-stage architecture designed to mimic a panel of human experts solving a problem.
+### 3. Parallel Execution (The Workers)
+Selected experts run simultaneously. They are unaware of each other, ensuring diverse, independent perspectives.
+*   **Tool Use**: Text experts can perform **Google Grounding** searches to verify facts in real-time.
+*   **Multi-Modal**: The system can generate text, images, and videos in a single turn if the query demands it.
 
-### 1. Intelligent Routing ( The Manager )
-When you submit a prompt or attach a file, the system doesn't just answer immediately. An **AI Router** analyzes your intent and context to select the best "team" for the job.
-*   *Need code?* It recruits the **Cursor Agent** and **GitHub Copilot** simulators.
-*   *Need an image?* It recruits the **Gemini Image** generator.
-*   *Need creative writing?* It recruits the **Claude 3.5 Sonnet** simulator.
-*   *Need facts?* It recruits the **Analytical Engine** with **Google Search** capabilities.
+### 4. Judge Synthesis (The Verdict)
+The **Judge Agent** (`gemini-3-pro-preview`) reviews all expert outputs and synthesizes a final answer.
+*   **Layered Explanation**: If technical facts conflict with user framing, it presents a "Primary Explanation" (aligned with user intent) and an "Optional Context" layer (scientific nuance).
+*   **Conflict Resolution**: Weighted logic determines which expert is most reliable for the specific domain.
 
-### 2. Expert Deliberation ( The Workers )
-The selected experts run in **parallel**, each generating a response based on their specific system instructions and role.
-*   **Text Experts** provide reasoning, code, or analysis.
-*   **Search Experts** (GPT-4o Sim, Analytical) perform real-time Google Searches to verify facts and return sources.
-*   **Visual Experts** generate high-fidelity images using `gemini-2.5-flash-image`.
-*   This parallel execution ensures diverse perspectives and prevents "tunnel vision."
-
-### 3. Orchestrator Synthesis ( The Judge )
-Once the experts have finished, a powerful **Orchestrator Agent** (`gemini-3-pro-preview`) reads the user's original prompt and *all* the expert responses.
-*   **Fusion Logic**: It fuses partial outputs into a normalized schema {source, answer, reasoning}.
-*   **Conflict Resolution**: It resolves disagreements by ranking experts based on their domain relevance.
-*   **Confidence Scoring**: It assigns a **High**, **Medium**, or **Low** confidence score based on the level of consensus.
-*   **Hallucination Filtering**: It cross-references claims against the Search Grounding data.
-
----
-
-## 🚀 Key Features
-
-*   **Multi-Model Orchestration**: Dynamically routes queries to simulated versions of GPT-4o, Claude 3.5, and specialized coding agents.
-*   **Real-Time Web Grounding**: Analytical experts use **Google Search** to provide up-to-date facts and clickable source citations.
-*   **Visual Intelligence**: Integrated image generation that works alongside text reasoning.
-*   **File Context**: Support for analyzing attached files with specialized analytical models.
-*   **Confidence Indicators**: Every final answer provides a transparent confidence assessment.
-*   **Streaming Consensus**: Watch the final verdict being written in real-time.
-*   **Robust Error Handling**: Advanced exponential backoff strategies to handle API rate limits gracefully.
-*   **Transparent Process**: You can expand the "Expert Deliberation" accordion to see exactly what every individual AI model proposed before the final answer was formed.
+### 5. Critic Audit (The Self-Correction)
+Finally, an **Auditor Agent** reviews the Judge's synthesis.
+*   **Framing Mismatch**: It checks if the tone matches the audience.
+*   **Fact Checking**: It flags logical leaps or missed details.
+*   **UI Integration**: These notes appear as a collapsible "Self-Correction" panel in the UI.
 
 ---
 
-## 🌟 How It Differs from Traditional Chatbots
+## ✨ Key Features
 
-Most AI apps (like ChatGPT or standard Gemini) rely on a **Linear Interaction**: You ask one model, and it gives one answer. MyGpt offers several distinct advantages:
-
-### 1. Accuracy via Consensus
-Single models often "hallucinate" or make up facts. By querying 3-4 models simultaneously, MyGpt acts as a self-correcting system. If two experts say "X" and one says "Y", the Judge model can evaluate the evidence and provide the correct answer, significantly reducing error rates.
-
-### 2. Specialized over Generalized
-A general chatbot tries to be good at everything but often masters nothing. MyGpt dynamically swaps its "brain." If you ask for Python code, it uses a coding-specific prompt structure. If you ask for a poem, it uses a creative writing structure. You get the specialist, not the generalist.
-
-### 3. The "Manager-Worker" Workflow
-In complex tasks (like coding a full feature), a single model often forgets requirements halfway through generation. MyGpt splits the load: specific workers handle the implementation details, while the Judge ensures the high-level requirements are met in the final output.
-
-### 4. Visual + Textual Integration
-Unlike apps that force you to choose between a "text mode" or an "image mode," MyGpt handles both simultaneously. The router can decide to generate an image *and* provide a textual explanation in the same turn if the context demands it.
+*   **Worldview-Aware AI**: Capable of discussing Traditional Medicine, Folklore, or Religion without unwarranted "debunking," while maintaining scientific accuracy in optional context layers.
+*   **Multi-Modal Generation**: Supports Text, Images (Gemini 2.5), and Video (Veo) in a unified chat interface.
+*   **Actionable Outputs**: The **Action Agent** detects requests like "Draft an email" and provides executable JSON blocks and UI buttons to copy/open mail clients.
+*   **Visual Architecture**: Automatically renders complex system designs using **Mermaid.js**.
+*   **Transparent Confidence**: Every answer includes a confidence score (High/Medium/Low) based on expert consensus.
+*   **Persistent Memory**: Remembers user persona (e.g., "Senior Engineer"), style ("Brief"), and technical context across sessions.
+*   **Streamed Deliberation**: Users can watch the Judge "think" and synthesize the answer in real-time.
 
 ---
 
 ## 🛠 Tech Stack
 
 *   **Frontend**: React 19, TypeScript, Tailwind CSS
-*   **AI orchestration**: Google GenAI SDK (Gemini 3 Flash, Gemini 3 Pro, Gemini 2.5 Image)
-*   **Tools**: Google Search Grounding for real-time information.
-*   **Markdown Rendering**: `react-markdown` with GFM support
-*   **Architecture**: Client-side logic for maximum privacy and speed.
+*   **Orchestration**: Google GenAI SDK (Gemini 1.5/2.5/3.0 Series)
+*   **Video**: Veo 3.1
+*   **Grounding**: Google Search Tool
+*   **Rendering**: `react-markdown`, `mermaid`, `katex` (Math)
 
----
+## 🔮 Future Roadmap
 
-## Getting Started
+*   **Voice Interactivity**: Integration with Gemini Live API for real-time debate.
+*   **RAG Integration**: Uploading large PDF knowledge bases for the experts to reference.
+*   **Custom Expert Creation**: UI for users to define their own expert personas.
 
-1.  Clone the repository.
-2.  Install dependencies: `npm install`
-3.  Run the app: `npm run dev`
+## Contact
+Created by Jayaprakash. Reach out at smaniaxb@gmail.com for collaboration!
