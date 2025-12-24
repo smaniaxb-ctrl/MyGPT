@@ -85,13 +85,13 @@ export const ConsensusDisplay: React.FC<Props> = ({ content, isThinking, criticC
   }, [content]);
 
   const handleShare = async () => {
-    const textToShare = `MyGpt Consensus Verdict:\n\n${cleanContent}`;
+    const textToShare = `MyGPT Consensus Verdict:\n\n${cleanContent}`;
     
     // 1. Try Native Share API (Mobile/Modern Browsers)
     if (navigator.share) {
         try {
             await navigator.share({
-                title: 'MyGpt Consensus Verdict',
+                title: 'MyGPT Consensus Verdict',
                 text: textToShare,
             });
             setShareState('shared');

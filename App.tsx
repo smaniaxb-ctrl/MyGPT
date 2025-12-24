@@ -224,8 +224,8 @@ const App: React.FC = () => {
                     <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h7" /></svg>
                 </button>
                 <div className="hidden sm:block">
-                    <h1 className="font-bold text-lg text-white tracking-tight">Consensus Engine</h1>
-                    <p className="text-[9px] text-slate-500 uppercase tracking-widest font-bold">Workspace v2.1 • Multi-Expert OS</p>
+                    <h1 className="font-bold text-lg text-white tracking-tight">MyGPT</h1>
+                    <p className="text-[9px] text-slate-500 uppercase tracking-widest font-bold">The Consensus Engine</p>
                 </div>
             </div>
             <div className="flex items-center gap-2">
