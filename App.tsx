@@ -11,7 +11,8 @@ const STORAGE_KEY_SESSIONS = 'consensus_sessions';
 const App: React.FC = () => {
   const [prompt, setPrompt] = useState('');
   const [attachments, setAttachments] = useState<FileAttachment[]>([]);
-  const [activeSessionId, setActiveSessionId] = useState<string>(Date.now().toString());
+  // Lazy initialization ensures consistent ID generation
+  const [activeSessionId, setActiveSessionId] = useState<string>(() => Date.now().toString());
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isMemoryOpen, setIsMemoryOpen] = useState(false);
@@ -35,14 +36,31 @@ const App: React.FC = () => {
   // Initialization & Persistence
   useEffect(() => {
     const savedSessions = localStorage.getItem(STORAGE_KEY_SESSIONS);
+    let historySessions: ChatSession[] = [];
+
     if (savedSessions) {
-      const parsed = JSON.parse(savedSessions);
-      setSessions(parsed);
-      if (parsed.length > 0) setActiveSessionId(parsed[0].id);
-    } else {
-      const firstSession: ChatSession = { id: activeSessionId, title: 'New Conversation', turns: [], updatedAt: Date.now() };
-      setSessions([firstSession]);
+      try {
+        historySessions = JSON.parse(savedSessions);
+        // Filter out empty sessions from the past to keep history clean
+        historySessions = historySessions.filter(s => s.turns.length > 0);
+      } catch (e) {
+        console.error("Failed to parse sessions", e);
+      }
     }
+    
+    // Always start with a fresh session on app load
+    const newSession: ChatSession = { 
+        id: activeSessionId, 
+        title: 'New Conversation', 
+        turns: [], 
+        updatedAt: Date.now() 
+    };
+    
+    // Prepend new session to history
+    setSessions([newSession, ...historySessions]);
+    
+    // Note: We deliberately do NOT restore the previous activeSessionId here.
+    // This ensures the user starts with a blank slate (cleared details) as requested.
 
     const checkKey = async () => {
       const win = window as any;
