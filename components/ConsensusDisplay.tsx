@@ -40,8 +40,17 @@ const Mermaid: React.FC<{ chart: string }> = ({ chart }) => {
         } catch (e) {
           // If syntax is invalid (e.g. incomplete streaming), it throws.
           if (mounted && ref.current) {
-             console.debug("Mermaid rendering incomplete or failed:", e);
-             ref.current.innerHTML = `<div class="text-xs text-red-400 font-mono bg-red-900/20 p-2 rounded border border-red-500/30">Diagram rendering...</div><pre class="text-[10px] text-slate-500 mt-2 opacity-50 overflow-hidden h-0">${chart}</pre>`;
+             // Instead of showing a red error immediately, show a loading state
+             // because streaming markdown often leaves mermaid blocks incomplete temporarily.
+             ref.current.innerHTML = `
+                <div class="flex items-center justify-center gap-2 p-4 bg-brand-900/10 border border-brand-500/20 rounded-xl">
+                   <div class="w-2 h-2 bg-brand-400 rounded-full animate-pulse"></div>
+                   <div class="w-2 h-2 bg-brand-400 rounded-full animate-pulse delay-75"></div>
+                   <div class="w-2 h-2 bg-brand-400 rounded-full animate-pulse delay-150"></div>
+                   <span class="text-xs font-mono text-brand-400 uppercase tracking-widest ml-2">Visualizing Architecture...</span>
+                </div>
+                <pre class="hidden">${chart}</pre>
+             `;
           }
         }
       }

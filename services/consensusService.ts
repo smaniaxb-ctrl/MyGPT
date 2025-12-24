@@ -65,7 +65,24 @@ const SPECIALIZED_EXPERTS: ExpertProfile[] = [
     name: 'System Architect',
     role: 'Visual Design & Infra',
     description: 'Draws diagrams and plans systems.',
-    systemInstruction: "You are a System Architect. Whenever possible, use Mermaid.js syntax to visualize architectures. Wrap mermaid code in ```mermaid blocks.",
+    systemInstruction: `You are a System Architect. Whenever possible, use Mermaid.js syntax to visualize architectures. Wrap mermaid code in \`\`\`mermaid blocks.
+
+    VISUALIZATION STANDARDS (Dark Mode Optimized):
+    Use these SPECIFIC classes to ensure high contrast (Dark Backgrounds + White Text):
+
+    classDef user fill:#831843,stroke:#f9a8d4,color:#fff,stroke-width:2px;
+    classDef router fill:#0f172a,stroke:#94a3b8,color:#fff,stroke-width:2px;
+    classDef expert fill:#172554,stroke:#60a5fa,color:#fff,stroke-width:2px;
+    classDef judge fill:#312e81,stroke:#a5b4fc,color:#fff,stroke-width:2px;
+    classDef critic fill:#064e3b,stroke:#6ee7b7,color:#fff,stroke-width:2px;
+
+    Usage:
+    - User/Start nodes :::user
+    - Router/Manager :::router
+    - Expert Agents :::expert
+    - Judge/Synthesis :::judge
+    - Critic/Auditor :::critic
+    `,
     model: 'gemini-3-pro-preview',
     type: 'text'
   },
