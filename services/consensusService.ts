@@ -247,7 +247,7 @@ export const identifyExperts = async (
   }
 };
 
-// --- 3. Workers Execution ---
+// --- 3. Workers Execution (With Paired Agent Reflexion) ---
 
 export const runWorkerModels = async (
   experts: ExpertProfile[],
@@ -310,7 +310,10 @@ RULES:
         const img = res.candidates?.[0]?.content?.parts?.find(p => p.inlineData)?.inlineData?.data;
         updateResult(index, { content: "Image generated.", images: img ? [img] : [], status: 'success', estimatedTokens: 250 });
       } else {
-        const response = await ai.models.generateContent({
+        // --- TEXT GENERATION WITH REFLEXION LOOP ---
+        
+        // 1. Initial Attempt
+        let response = await ai.models.generateContent({
           model: expert.model,
           contents: { parts: [...fileParts, { text: memoryContext + prompt }] },
           config: { 
@@ -320,6 +323,52 @@ RULES:
         });
         
         let content = response.text || "";
+
+        // 2. REFLEXION: Quality Assurance (Only for High-Stakes Experts)
+        // We only trigger this for Pro Reasoner (Logic/Code) and Architect (Diagrams)
+        if (['pro-reasoner', 'architect'].includes(expert.id)) {
+            const qaPrompt = `
+              You are a QA Auditor for AI outputs.
+              Analyze the text below.
+              Check for:
+              1. Syntax errors in Code, JSON, or Mermaid diagrams.
+              2. Logical fallacies or missing steps.
+              3. Compliance with prompt constraints.
+              
+              If the output is high quality and error-free, reply strictly with: PASS
+              If errors exist, list them concisely.
+            `;
+            
+            // Note: We use the 'flash' model for the reviewer to be fast
+            const qaResponse = await ai.models.generateContent({
+                model: 'gemini-3-flash-preview',
+                contents: `Output to Review:\n${content}`,
+                config: { systemInstruction: qaPrompt }
+            });
+            
+            const critique = qaResponse.text || "PASS";
+
+            // 3. Self-Correction (If QA Failed)
+            if (!critique.includes("PASS")) {
+                // Update UI to show we are self-correcting (optional, keeps user informed)
+                updateResult(index, { content: content + "\n\n*...Self-correction in progress (QA Agent detected issues)...*" });
+                
+                response = await ai.models.generateContent({
+                    model: expert.model, // The original expert fixes their own work
+                    contents: { parts: [
+                        { text: `Original Prompt: ${prompt}` },
+                        { text: `Your Draft Answer:\n${content}` },
+                        { text: `QA Reviewer Feedback:\n${critique}` },
+                        { text: `Task: Rewrite the answer to fix the errors identified by the QA Reviewer. Output ONLY the fixed answer.` }
+                    ]},
+                    config: { systemInstruction: fullSystemInstruction }
+                });
+                content = response.text || content;
+            }
+        }
+        
+        // --- END REFLEXION LOOP ---
+
         let actionDraft;
         let groundingUrls = response.candidates?.[0]?.groundingMetadata?.groundingChunks
             ?.map((chunk: any) => chunk.web)
