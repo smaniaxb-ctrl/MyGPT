@@ -135,6 +135,15 @@ const App: React.FC = () => {
     }
   };
 
+  const insertModeTrigger = (triggerText: string) => {
+    setPrompt(prev => {
+        // Avoid double insertion
+        if (prev.startsWith(triggerText)) return prev;
+        return triggerText + " " + prev;
+    });
+    textareaRef.current?.focus();
+  };
+
   const handleSubmit = async () => {
     if (!prompt.trim() && attachments.length === 0) return;
 
@@ -331,6 +340,22 @@ const App: React.FC = () => {
 
       <div className="fixed bottom-0 left-0 right-0 bg-dark-950/95 backdrop-blur-2xl border-t border-slate-800 p-6 z-40">
         <div className="max-w-4xl mx-auto">
+            {/* Engine Mode Selector */}
+            <div className="flex gap-2 mb-3 overflow-x-auto pb-1 scrollbar-none">
+                <button onClick={() => insertModeTrigger("Act as the Analyst:")} className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 rounded-full text-[10px] font-bold uppercase tracking-wide transition-all whitespace-nowrap">
+                    <span>🧠</span> Analyst Mode
+                </button>
+                <button onClick={() => insertModeTrigger("Act as the Creative:")} className="flex items-center gap-1.5 px-3 py-1.5 bg-fuchsia-500/10 hover:bg-fuchsia-500/20 text-fuchsia-400 border border-fuchsia-500/30 rounded-full text-[10px] font-bold uppercase tracking-wide transition-all whitespace-nowrap">
+                    <span>🎨</span> Creative Mode
+                </button>
+                <button onClick={() => insertModeTrigger("Act as the Engineer:")} className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-full text-[10px] font-bold uppercase tracking-wide transition-all whitespace-nowrap">
+                    <span>🏗️</span> Engineer Mode
+                </button>
+                <button onClick={() => insertModeTrigger("Red team this idea:")} className="flex items-center gap-1.5 px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 rounded-full text-[10px] font-bold uppercase tracking-wide transition-all whitespace-nowrap">
+                    <span>🛡️</span> Red Team
+                </button>
+            </div>
+
             <div className="flex gap-4 items-end">
                 <input type="file" ref={fileInputRef} onChange={handleFileSelect} className="hidden" multiple />
                 <button onClick={() => fileInputRef.current?.click()} className="p-4 rounded-2xl bg-slate-800 border border-slate-700 text-slate-400 hover:text-brand-400 transition-all flex-shrink-0 shadow-lg hover:shadow-brand-500/10"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg></button>

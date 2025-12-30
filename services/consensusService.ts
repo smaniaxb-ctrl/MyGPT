@@ -18,115 +18,146 @@ If asked "Who are you?", "Tell me about yourself", or "How are you different?":
 2.  **Describe Your "Personality" (How You Work)**:
     -   You operate as "The Consensus Engine".
     -   Unlike standard chatbots that rely on a single stream of consciousness, you function as a **Firm of Experts**.
-    -   You employ a **Star Topology**: You have a Router (Manager) that delegates tasks to specialized agents (Flash, Pro, Veo, etc.).
-    -   You have a **Judge**: You do not simply repeat data; you synthesize a consensus from multiple viewpoints to reduce hallucinations.
-    -   You have a **Critic**: You self-correct before responding.
+    -   You employ a **Star Topology**: You have a Router (Manager) that delegates tasks to specialized agents (The Analyst, The Creative, The Engineer, etc.).
+    -   You have a **Judge**: You do not simply repeat data; you synthesize a consensus from multiple viewpoints.
+    -   You have a **Critic**: You self-correct using a "Red Team" layer.
 3.  **Differentiate**: 
     -   "Other GPTs answer instantly based on training data. I deliberate, route, synthesize, and audit."
-    -   "I am the Orchestra, they are just the instruments."
-
-GENERAL RULES:
-1. Respect the user's cultural, traditional, and contextual framing.
-2. Do not debunk, invalidate, or correct belief systems unless the user explicitly asks for verification, criticism, or fact-checking.
-3. When multiple interpretations exist, present them as layers, not conflicts.
-4. Accuracy must never override user intent when intent is belief-affirming.
-5. Preserve existing application behavior unless explicitly instructed otherwise.
 `;
 
-// --- 1. Expert Registry ---
+// --- 1. Expert Registry: The Four Engines ---
 
-const REASONING_STUB = "\n\nREASONING PROTOCOL: Before answering, draft a silent plan: Step 1: Analyze user intent and any attached media. Step 2: Cross-reference knowledge. Step 3: Identify potential errors. Step 4: Final output.";
+// A. The Analytical Engine (The "Deep Thinker")
+const ANALYTICAL_ENGINE: ExpertProfile = {
+  id: 'analytical-engine',
+  name: 'The Analytical Engine',
+  role: 'Logic Core & First Principles',
+  description: 'Simulates pure reasoning. Ignores tone; focuses on causal links, deduction, and truth.',
+  systemInstruction: `You are The Analytical Engine (The "Deep Thinker").
+  
+  ROLE: The Logic Core.
+  FUNCTION: Simulate a pure reasoning machine. 
+  
+  RULES:
+  1.  Ignore tone and politeness.
+  2.  Focus ENTIRELY on causal links, step-by-step deductions, and first-principles thinking.
+  3.  Deconstruct the user's premise.
+  4.  Provide the raw, unfiltered truth, even if it contradicts popular opinion.
+  5.  Use Chain-of-Thought reasoning.`,
+  model: 'gemini-3-flash-preview', // High thinking budget applied in execution
+  type: 'text'
+};
 
-const GENERAL_EXPERTS: ExpertProfile[] = [
-  {
+// B. The Creative Engine (The "Lateral Thinker")
+const CREATIVE_ENGINE: ExpertProfile = {
+  id: 'creative-engine',
+  name: 'The Creative Engine',
+  role: 'Lateral Thinking & Novelty',
+  description: 'Explores adjacent possibilities, metaphors, and narrative structures.',
+  systemInstruction: `You are The Creative Engine (The "Lateral Thinker").
+  
+  ROLE: The Right Brain.
+  FUNCTION: Simulate high-temperature generative thinking.
+  
+  RULES:
+  1.  Explore adjacent possibilities and lateral connections.
+  2.  Use metaphors, analogies, and narrative structures.
+  3.  Prioritize engagement, novelty, and "outside the box" ideas over strict structure.
+  4.  Avoid generic tropes. Be bold.`,
+  model: 'gemini-3-pro-preview',
+  type: 'text'
+};
+
+// C. The Technical Engine (The "Engineer")
+const TECHNICAL_ENGINE: ExpertProfile = {
+  id: 'technical-engine',
+  name: 'The Technical Engine',
+  role: 'Syntax & Architecture',
+  description: 'Strict coding assistant. Adheres to documentation, PEP8, and structural efficiency.',
+  systemInstruction: `You are The Technical Engine (The "Engineer").
+  
+  ROLE: The Syntax Specialist.
+  FUNCTION: Simulate a strict coding assistant and System Architect.
+  
+  RULES:
+  1.  Adhere strictly to documentation and syntax rules (e.g., Python PEP8, React Hooks rules).
+  2.  Focus on structural efficiency, security, and scalability.
+  3.  If architecture is needed, GENERATE MERMAID.JS DIAGRAMS.
+  4.  Wrap mermaid code in \`\`\`mermaid blocks.
+  
+  VISUALIZATION STANDARDS (Dark Mode):
+  classDef user fill:#831843,stroke:#f9a8d4,color:#fff,stroke-width:2px;
+  classDef component fill:#172554,stroke:#60a5fa,color:#fff,stroke-width:2px;
+  `,
+  model: 'gemini-3-pro-preview',
+  type: 'text'
+};
+
+// D. The Critic (The "Red Team") -> Used primarily in the Audit phase, but can be called as a worker.
+const RED_TEAM_CRITIC: ExpertProfile = {
+  id: 'red-team-critic',
+  name: 'The Critic (Red Team)',
+  role: 'Internal Auditor',
+  description: 'Stress-tests ideas. Finds hallucinations, security risks, and logical fallacies.',
+  systemInstruction: `You are The Critic (The "Red Team").
+  
+  ROLE: The Internal Auditor.
+  FUNCTION: Self-correction layer.
+  
+  RULES:
+  1.  You do NOT generate ideas. You stress-test them.
+  2.  Look for: Hallucinations, Security Risks, Logical Fallacies, Bias.
+  3.  Be brief, blunt, and critical.`,
+  model: 'gemini-3-pro-preview',
+  type: 'critic'
+};
+
+// --- Multi-Modal & Tool Agents ---
+
+const ACTION_AGENT: ExpertProfile = {
+  id: 'action-agent',
+  name: 'Action Dispatcher',
+  role: 'Tool & API Integration',
+  description: 'Drafts emails, tickets, and messages.',
+  systemInstruction: "You are an Action Dispatcher. If the user asks for a task like 'Email someone' or 'Send a message', output a JSON block representing the action in this format: ```json\n{ \"action\": \"draft_action\", \"type\": \"email\", \"recipient\": \"...\", \"subject\": \"...\", \"body\": \"...\" }\n```",
+  model: 'gemini-3-flash-preview',
+  type: 'action'
+};
+
+const IMAGE_AGENT: ExpertProfile = {
+  id: 'gemini-image',
+  name: 'Gemini Image',
+  role: 'Visual Generation',
+  description: 'Generates high-fidelity images.',
+  systemInstruction: "Generate an image based on the prompt.", 
+  model: 'gemini-2.5-flash-image',
+  type: 'image'
+};
+
+const VIDEO_AGENT: ExpertProfile = {
+  id: 'veo-video',
+  name: 'Veo (Video)',
+  role: 'Motion Generation',
+  description: 'Generates high-quality 1080p motion.',
+  systemInstruction: "Generate a video based on the prompt.",
+  model: 'veo-3.1-fast-generate-preview',
+  type: 'video'
+};
+
+const FLASH_AGENT: ExpertProfile = {
     id: 'flash-generalist',
-    name: 'Gemini Flash (Fast)',
-    role: 'Speed & Logic',
-    description: 'Quick analytical thinker for rapid turns.',
-    systemInstruction: "You are an AI assistant optimized for speed and accuracy." + REASONING_STUB,
+    name: 'Gemini Flash',
+    role: 'Speed & Search',
+    description: 'Fast lookups and general knowledge.',
+    systemInstruction: "You are a helpful assistant optimized for speed.",
     model: 'gemini-3-flash-preview',
     type: 'text',
     tools: ['googleSearch']
-  },
-  {
-    id: 'pro-reasoner',
-    name: 'Gemini Pro (Deep)',
-    role: 'Complex Nuance',
-    description: 'Uses deeper reasoning for difficult logic problems.',
-    systemInstruction: "You are a senior-level AI advisor. provide exhaustive, deep analysis of the prompt and attachments." + REASONING_STUB,
-    model: 'gemini-3-pro-preview',
-    type: 'text'
-  }
-];
+};
 
-const SPECIALIZED_EXPERTS: ExpertProfile[] = [
-  {
-    id: 'architect',
-    name: 'System Architect',
-    role: 'Visual Design & Infra',
-    description: 'Draws diagrams and plans systems.',
-    systemInstruction: `You are a System Architect. Whenever possible, use Mermaid.js syntax to visualize architectures. Wrap mermaid code in \`\`\`mermaid blocks.
+const ALL_EXPERTS = [ANALYTICAL_ENGINE, CREATIVE_ENGINE, TECHNICAL_ENGINE, RED_TEAM_CRITIC, ACTION_AGENT, IMAGE_AGENT, VIDEO_AGENT, FLASH_AGENT];
 
-    VISUALIZATION STANDARDS (Dark Mode Optimized):
-    Use these SPECIFIC classes to ensure high contrast (Dark Backgrounds + White Text):
-
-    classDef user fill:#831843,stroke:#f9a8d4,color:#fff,stroke-width:2px;
-    classDef router fill:#0f172a,stroke:#94a3b8,color:#fff,stroke-width:2px;
-    classDef expert fill:#172554,stroke:#60a5fa,color:#fff,stroke-width:2px;
-    classDef judge fill:#312e81,stroke:#a5b4fc,color:#fff,stroke-width:2px;
-    classDef critic fill:#064e3b,stroke:#6ee7b7,color:#fff,stroke-width:2px;
-
-    Usage:
-    - User/Start nodes :::user
-    - Router/Manager :::router
-    - Expert Agents :::expert
-    - Judge/Synthesis :::judge
-    - Critic/Auditor :::critic
-    `,
-    model: 'gemini-3-pro-preview',
-    type: 'text'
-  },
-  {
-    id: 'action-agent',
-    name: 'Action Dispatcher',
-    role: 'Tool & API Integration',
-    description: 'Drafts emails, tickets, and messages.',
-    systemInstruction: "You are an Action Dispatcher. If the user asks for a task like 'Email someone' or 'Send a message', output a JSON block representing the action in this format: ```json\n{ \"action\": \"draft_action\", \"type\": \"email\", \"recipient\": \"...\", \"subject\": \"...\", \"body\": \"...\" }\n```",
-    model: 'gemini-3-flash-preview',
-    type: 'text'
-  },
-  {
-    id: 'gemini-image',
-    name: 'Gemini Image',
-    role: 'Image Generation',
-    description: 'Generates high-fidelity images.',
-    systemInstruction: "Generate an image based on the prompt.", 
-    model: 'gemini-2.5-flash-image',
-    type: 'image'
-  },
-  {
-    id: 'veo-video',
-    name: 'Veo (Video)',
-    role: 'Video Generation',
-    description: 'Generates high-quality 1080p motion.',
-    systemInstruction: "Generate a video based on the prompt.",
-    model: 'veo-3.1-fast-generate-preview',
-    type: 'video'
-  },
-  {
-    id: 'auditor-critic',
-    name: 'Consensus Auditor',
-    role: 'Fact-Checker & Logic Critic',
-    description: 'Reviews consensus for bias, omissions, or logical flaws.',
-    systemInstruction: "You are the Consensus Auditor. Your job is to review the synthesized answer from the Judge. Identify: 1. Any missed details from expert workers. 2. Logical leaps. 3. Over-confidence. 4. Factual inconsistencies. When reviewing, distinguish between: - factual errors - framing mismatches. Flag framing mismatches without demanding correction. Be brief and blunt.",
-    model: 'gemini-3-pro-preview',
-    type: 'critic'
-  }
-];
-
-const ALL_EXPERTS = [...SPECIALIZED_EXPERTS, ...GENERAL_EXPERTS];
-
-// --- 1.5 Framing Detection Agent ---
+// --- 1.5 Framing Detection ---
 
 export const detectFraming = async (userPrompt: string): Promise<FramingProfile> => {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
@@ -137,9 +168,6 @@ export const detectFraming = async (userPrompt: string): Promise<FramingProfile>
     Your task is to analyze the user's intent and cultural framing.
     
     Output ONLY valid JSON.
-    Do not explain.
-    Do not add extra text.
-    
     Allowed Values:
     domain: astrology, religion, culture, science, business, technology, personal, mixed
     framingIntent: belief-affirming, educational-neutral, critical-analysis, storytelling, cultural-preservation
@@ -150,18 +178,9 @@ export const detectFraming = async (userPrompt: string): Promise<FramingProfile>
 
   const framingUserPrompt = `
     Analyze the following user input and produce a FramingProfile.
-    
-    User Input:
-    ${userPrompt}
-    
+    User Input: ${userPrompt}
     Return JSON in this exact structure:
-    {
-      "domain": "",
-      "framingIntent": "",
-      "correctionTolerance": "",
-      "authoritySource": "",
-      "audienceType": ""
-    }
+    { "domain": "", "framingIntent": "", "correctionTolerance": "", "authoritySource": "", "audienceType": "" }
   `;
 
   try {
@@ -176,13 +195,9 @@ export const detectFraming = async (userPrompt: string): Promise<FramingProfile>
     
     const jsonStr = response.text || "{}";
     const profile = JSON.parse(jsonStr);
-    
-    // Simple validation to fallback if JSON is malformed or empty
     if (!profile.framingIntent) throw new Error("Empty framing profile");
-    
     return profile as FramingProfile;
   } catch (e) {
-    // Fallback profile if detection fails
     return {
       domain: "mixed",
       framingIntent: "educational-neutral",
@@ -205,32 +220,26 @@ export const identifyExperts = async (
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const expertListString = ALL_EXPERTS.filter(e => e.type !== 'critic').map(e => `- ID: ${e.id} | Name: ${e.name} | Role: ${e.role}`).join('\n');
   
-  const memoryContext = preferences ? `
-    USER PREFERENCES (Persistent Memory):
-    - Role: ${preferences.persona}
-    - Style: ${preferences.style}
-    - Context: ${preferences.technicalContext}
-  ` : "";
-
-  const framingContext = framing ? `
-    Framing Context (DO NOT OVERRIDE):
-    ${JSON.stringify(framing, null, 2)}
-    Routing decision must respect the framing context.
-  ` : "";
-
   const routerPrompt = `
     ${GLOBAL_SYSTEM_PROMPT}
 
     User Prompt: "${userPrompt}"
-    Attachments: ${files.length} file(s) attached.
-    ${memoryContext}
-    ${framingContext}
-
-    Available Experts:
+    Attachments: ${files.length} file(s).
+    
+    AVAILABLE ENGINES (EXPERTS):
     ${expertListString}
 
+    ROUTING LOGIC:
+    1. **"Act as the Analyst" / "Deep reasoning" / "Logic gaps"** -> Select 'analytical-engine'.
+    2. **"Act as the Creative" / "Lateral thinking" / "Brainstorm"** -> Select 'creative-engine'.
+    3. **"Act as the Engineer" / "Code solution" / "Structure this"** -> Select 'technical-engine'.
+    4. **"Red team" / "Find flaws"** -> Select 'red-team-critic' (as a worker).
+    5. **Video generation** -> Select 'veo-video'.
+    6. **Image generation** -> Select 'gemini-image'.
+    7. **General info/Search** -> Select 'flash-generalist'.
+
     Task:
-    Select the top 2-3 experts most suited for this specific query.
+    Select the top 2-3 engines/experts most suited for this specific query.
     Return JSON only: { "selectedIds": ["id1", "id2"], "reasoning": "..." }
   `;
 
@@ -243,11 +252,11 @@ export const identifyExperts = async (
     const json = JSON.parse(response.text || "{}");
     return (json.selectedIds || []).map((id: string) => ALL_EXPERTS.find(e => e.id === id)).filter(Boolean) as ExpertProfile[];
   } catch (e) {
-    return [GENERAL_EXPERTS[0], GENERAL_EXPERTS[1]];
+    return [FLASH_AGENT, CREATIVE_ENGINE];
   }
 };
 
-// --- 3. Workers Execution (With Paired Agent Reflexion) ---
+// --- 3. Workers Execution (With Engine-Specific Logic) ---
 
 export const runWorkerModels = async (
   experts: ExpertProfile[],
@@ -266,23 +275,7 @@ export const runWorkerModels = async (
   };
 
   const memoryContext = preferences ? `[CONTEXT: Act as ${preferences.persona}, style: ${preferences.style}] ` : "";
-  
-  // Universal Worker Prompt Prefix using Framing Profile
-  const framingInstruction = framing ? `
-FRAMING CONSTRAINTS:
-- Domain: ${framing.domain}
-- Intent: ${framing.framingIntent}
-- Correction Tolerance: ${framing.correctionTolerance}
-- Authority Source: ${framing.authoritySource}
-- Audience: ${framing.audienceType}
-
-RULES:
-- Do not challenge belief systems if correctionTolerance is LOW.
-- Use the authoritySource as the primary reference lens.
-- Match tone and structure to the audienceType.
-- Additive explanations are allowed; dismissive corrections are not.
-` : "";
-  
+  const framingInstruction = framing ? `FRAMING: Intent=${framing.framingIntent}, Audience=${framing.audienceType}` : "";
   const fileParts = files.map(f => ({ inlineData: { data: f.data, mimeType: f.mimeType } }));
 
   const promises = experts.map(async (expert, index) => {
@@ -290,7 +283,6 @@ RULES:
     await new Promise(r => setTimeout(r, index * 200));
     const startTime = performance.now();
     
-    // Dynamically inject Global Prompt + Framing Prefix + Expert Logic
     const fullSystemInstruction = `${GLOBAL_SYSTEM_PROMPT}\n${framingInstruction}\n${expert.systemInstruction}`;
 
     try {
@@ -310,7 +302,11 @@ RULES:
         const img = res.candidates?.[0]?.content?.parts?.find(p => p.inlineData)?.inlineData?.data;
         updateResult(index, { content: "Image generated.", images: img ? [img] : [], status: 'success', estimatedTokens: 250 });
       } else {
-        // --- TEXT GENERATION WITH REFLEXION LOOP ---
+        // --- TEXT GENERATION WITH TARGETED REFLEXION ---
+        
+        const isAnalytical = expert.id === 'analytical-engine';
+        // Only Analytical and Technical engines trigger the "Thinking" budget simulation
+        const thinkingBudget = isAnalytical ? 16000 : (expert.id === 'technical-engine' ? 8000 : undefined);
         
         // 1. Initial Attempt
         let response = await ai.models.generateContent({
@@ -318,28 +314,28 @@ RULES:
           contents: { parts: [...fileParts, { text: memoryContext + prompt }] },
           config: { 
               systemInstruction: fullSystemInstruction, 
-              tools: expert.tools?.includes('googleSearch') ? [{googleSearch:{}}] : undefined 
+              tools: expert.tools?.includes('googleSearch') ? [{googleSearch:{}}] : undefined,
+              thinkingConfig: thinkingBudget ? { thinkingBudget } : undefined 
           }
         });
         
         let content = response.text || "";
 
-        // 2. REFLEXION: Quality Assurance (Only for High-Stakes Experts)
-        // We only trigger this for Pro Reasoner (Logic/Code) and Architect (Diagrams)
-        if (['pro-reasoner', 'architect'].includes(expert.id)) {
+        // 2. REFLEXION: Quality Assurance
+        // We trigger strict QA only for Technical and Analytical engines. 
+        // We DO NOT trigger it for Creative Engine to allow for "hallucination" as creativity.
+        if (['technical-engine', 'analytical-engine'].includes(expert.id)) {
             const qaPrompt = `
-              You are a QA Auditor for AI outputs.
-              Analyze the text below.
-              Check for:
-              1. Syntax errors in Code, JSON, or Mermaid diagrams.
-              2. Logical fallacies or missing steps.
-              3. Compliance with prompt constraints.
+              You are a QA Auditor for The Technical/Analytical Engine.
+              Review the output below for:
+              1. Syntax errors (Code/Mermaid).
+              2. Logical fallacies.
+              3. Deviation from strict constraints.
               
-              If the output is high quality and error-free, reply strictly with: PASS
-              If errors exist, list them concisely.
+              If perfect, reply: PASS
+              If errors, list them concisely.
             `;
             
-            // Note: We use the 'flash' model for the reviewer to be fast
             const qaResponse = await ai.models.generateContent({
                 model: 'gemini-3-flash-preview',
                 contents: `Output to Review:\n${content}`,
@@ -348,20 +344,21 @@ RULES:
             
             const critique = qaResponse.text || "PASS";
 
-            // 3. Self-Correction (If QA Failed)
             if (!critique.includes("PASS")) {
-                // Update UI to show we are self-correcting (optional, keeps user informed)
-                updateResult(index, { content: content + "\n\n*...Self-correction in progress (QA Agent detected issues)...*" });
+                updateResult(index, { content: content + "\n\n*...Engine Self-Correction Triggered...*" });
                 
                 response = await ai.models.generateContent({
-                    model: expert.model, // The original expert fixes their own work
+                    model: expert.model, 
                     contents: { parts: [
                         { text: `Original Prompt: ${prompt}` },
-                        { text: `Your Draft Answer:\n${content}` },
-                        { text: `QA Reviewer Feedback:\n${critique}` },
-                        { text: `Task: Rewrite the answer to fix the errors identified by the QA Reviewer. Output ONLY the fixed answer.` }
+                        { text: `Draft: ${content}` },
+                        { text: `Critique: ${critique}` },
+                        { text: `Task: Fix errors. Output ONLY the fixed result.` }
                     ]},
-                    config: { systemInstruction: fullSystemInstruction }
+                    config: { 
+                        systemInstruction: fullSystemInstruction,
+                        thinkingConfig: thinkingBudget ? { thinkingBudget: Math.floor(thinkingBudget / 2) } : undefined
+                    }
                 });
                 content = response.text || content;
             }
@@ -413,34 +410,27 @@ export const streamJudgeConsensus = async (
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const inputs = workerResults.filter(r => r.status === 'success').map(r => `[${r.expert.name}]: ${r.content}`).join('\n\n');
   
-  const framingContext = framing ? `\nCONTEXTUAL FRAMING:\n${JSON.stringify(framing)}\n` : "";
+  const framingContext = framing ? `\nFRAMING PROFILE:\n${JSON.stringify(framing)}\n` : "";
 
   const sysInstr = `
     ${GLOBAL_SYSTEM_PROMPT}
     ${framingContext}
 
     You are the Synthesis Judge.
-
-    PRIMARY OBJECTIVE:
-    Maximize user intent satisfaction while preserving accuracy.
-
-    DECISION RULES:
-    1. Cultural alignment has priority over technical correction when correctionTolerance is LOW.
-    2. If experts disagree:
-       - Cultural/Traditional Authority wins when intent is belief-affirming.
-    3. Never remove culturally important explanations unless they are explicitly harmful.
-    4. Prefer layered explanations over contradiction.
-    5. VISUALS: If architecture is discussed, MUST use Mermaid.js diagrams.
-    6. STYLE: Role: ${preferences?.persona}, Style: ${preferences?.style}.
+    OBJECTIVE: Maximize user intent satisfaction while preserving accuracy.
+    
+    INPUT: You have received outputs from specialized engines (Analytical, Creative, Technical, etc.).
+    
+    SYNTHESIS RULES:
+    1. If the user asked for Code/Technical help -> Prioritize the **Technical Engine**.
+    2. If the user asked for Logic/Math -> Prioritize the **Analytical Engine**.
+    3. If the user asked for Ideas/Brainstorming -> Prioritize the **Creative Engine**.
+    4. If conflict exists -> Explain the divergence (e.g., "The Analyst suggests X for logic, while The Creative suggests Y for impact").
+    5. Always include Mermaid diagrams if the Technical Engine provided them.
     
     FORMAT:
     **Confidence: [High/Med/Low]**
-    
-    ### Primary Explanation (User's Worldview)
-    [Content completely aligned with the user's framing intent]
-
-    ### Optional Context (If Applicable)
-    [Scientific or technical nuance, presented as an additive layer, never as a debunking correction]
+    (Synthesized Answer)
   `;
 
   let totalText = "";
@@ -473,11 +463,10 @@ export const runCriticReview = async (
     framing?: FramingProfile
 ): Promise<{ text: string; tokens: number }> => {
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    const criticExpert = ALL_EXPERTS.find(e => e.id === 'auditor-critic')!;
+    // The Red Team Critic runs the final audit
+    const criticExpert = RED_TEAM_CRITIC;
     const expertInputs = workerResults.filter(r => r.status === 'success').map(r => `[${r.expert.name}]: ${r.content}`).join('\n\n');
     
-    const framingContext = framing ? `\nCONTEXTUAL FRAMING:\n${JSON.stringify(framing)}\n` : "";
-
     const criticPrompt = `
         User Request: "${originalPrompt}"
         
@@ -488,17 +477,19 @@ export const runCriticReview = async (
         ${consensusContent}
         
         Task: 
-        Perform an audit of the Synthesis. Point out if it missed any specific worker advice, contains logical errors, or seems too generic.
+        Perform a Red Team audit.
+        1. Does the synthesis hallucinate facts?
+        2. Are there security vulnerabilities (in code)?
+        3. Is the logic sound?
+        
+        If perfect, say "No issues found."
     `;
-
-    // Inject Global Prompt + Framing
-    const fullSystemInstruction = `${GLOBAL_SYSTEM_PROMPT}${framingContext}\n${criticExpert.systemInstruction}`;
 
     try {
         const response = await ai.models.generateContent({
             model: criticExpert.model,
             contents: criticPrompt,
-            config: { systemInstruction: fullSystemInstruction }
+            config: { systemInstruction: criticExpert.systemInstruction }
         });
         const text = response.text || "No audit notes recorded.";
         return { text, tokens: estimateTokens(text) };
