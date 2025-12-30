@@ -1,10 +1,11 @@
-# MyGpt: The Consensus Engine
 
-MyGpt is a sophisticated multi-agent orchestration platform that leverages parallel processing and "Wisdom of the Crowds" logic to deliver high-fidelity, hallucination-resistant, and culturally aware AI responses.
+# Firm of Experts: The Consensus Engine
+
+Firm of Experts is a sophisticated multi-agent orchestration platform that leverages parallel processing and "Wisdom of the Crowds" logic to deliver high-fidelity, hallucination-resistant, and culturally aware AI responses.
 
 ## 🚀 Overview
 
-Unlike traditional chatbots that rely on a single model's stream of consciousness, MyGpt employs a **Star Topology Architecture**:
+Unlike traditional chatbots that rely on a single model's stream of consciousness, Firm of Experts employs a **Star Topology Architecture**:
 1.  **Detects** your worldview and intent (Framing).
 2.  **Routes** the query to specialized expert agents (Text, Image, Video, Actions).
 3.  **Synthesizes** a consensus verdict using a "Judge" model.
