@@ -340,18 +340,30 @@ const App: React.FC = () => {
 
       <div className="fixed bottom-0 left-0 right-0 bg-dark-950/95 backdrop-blur-2xl border-t border-slate-800 p-6 z-40">
         <div className="max-w-4xl mx-auto">
+            
+            {/* Added Helper Text */}
+            <div className="flex items-center gap-2 mb-2 px-1">
+                <span className="text-[10px] font-bold text-brand-500 uppercase tracking-wider flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-brand-500 animate-pulse"></span>
+                    Auto-Pilot Active
+                </span>
+                <span className="text-[10px] text-slate-500">
+                    &mdash; The system will choose experts for you. Click below <strong>only</strong> to force a specific mode.
+                </span>
+            </div>
+
             {/* Engine Mode Selector */}
             <div className="flex gap-2 mb-3 overflow-x-auto pb-1 scrollbar-none">
-                <button onClick={() => insertModeTrigger("Act as the Analyst:")} className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 rounded-full text-[10px] font-bold uppercase tracking-wide transition-all whitespace-nowrap">
+                <button title="Force deep logic, math, and first-principles thinking." onClick={() => insertModeTrigger("Act as the Analyst:")} className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 rounded-full text-[10px] font-bold uppercase tracking-wide transition-all whitespace-nowrap">
                     <span>🧠</span> Analyst Mode
                 </button>
-                <button onClick={() => insertModeTrigger("Act as the Creative:")} className="flex items-center gap-1.5 px-3 py-1.5 bg-fuchsia-500/10 hover:bg-fuchsia-500/20 text-fuchsia-400 border border-fuchsia-500/30 rounded-full text-[10px] font-bold uppercase tracking-wide transition-all whitespace-nowrap">
+                <button title="Force lateral thinking, metaphors, and novel ideas." onClick={() => insertModeTrigger("Act as the Creative:")} className="flex items-center gap-1.5 px-3 py-1.5 bg-fuchsia-500/10 hover:bg-fuchsia-500/20 text-fuchsia-400 border border-fuchsia-500/30 rounded-full text-[10px] font-bold uppercase tracking-wide transition-all whitespace-nowrap">
                     <span>🎨</span> Creative Mode
                 </button>
-                <button onClick={() => insertModeTrigger("Act as the Engineer:")} className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-full text-[10px] font-bold uppercase tracking-wide transition-all whitespace-nowrap">
+                <button title="Force strict code, structure, and system architecture." onClick={() => insertModeTrigger("Act as the Engineer:")} className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-full text-[10px] font-bold uppercase tracking-wide transition-all whitespace-nowrap">
                     <span>🏗️</span> Engineer Mode
                 </button>
-                <button onClick={() => insertModeTrigger("Red team this idea:")} className="flex items-center gap-1.5 px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 rounded-full text-[10px] font-bold uppercase tracking-wide transition-all whitespace-nowrap">
+                <button title="Force a critical audit to find flaws and risks." onClick={() => insertModeTrigger("Red team this idea:")} className="flex items-center gap-1.5 px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 rounded-full text-[10px] font-bold uppercase tracking-wide transition-all whitespace-nowrap">
                     <span>🛡️</span> Red Team
                 </button>
             </div>
