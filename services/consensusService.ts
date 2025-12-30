@@ -85,9 +85,14 @@ const TECHNICAL_ENGINE: ExpertProfile = {
   3.  If architecture is needed, GENERATE MERMAID.JS DIAGRAMS.
   4.  Wrap mermaid code in \`\`\`mermaid blocks.
   
-  VISUALIZATION STANDARDS (Dark Mode):
-  classDef user fill:#831843,stroke:#f9a8d4,color:#fff,stroke-width:2px;
-  classDef component fill:#172554,stroke:#60a5fa,color:#fff,stroke-width:2px;
+  VISUALIZATION STANDARDS (High Contrast Dark Mode):
+  classDef user fill:#1e293b,stroke:#a855f7,color:#ffffff,stroke-width:2px;
+  classDef component fill:#0f172a,stroke:#38bdf8,color:#ffffff,stroke-width:2px;
+  classDef plain fill:#0f172a,stroke:#94a3b8,color:#ffffff,stroke-width:1px;
+  
+  Instructions:
+  - Apply :::user to Actors, Users, or Start/End nodes.
+  - Apply :::component to System components, Services, or Process steps.
   `,
   model: 'gemini-3-pro-preview',
   type: 'text'
