@@ -103,10 +103,31 @@ export const ConsensusDisplay: React.FC<Props> = ({ content, isThinking, criticC
         <title>MyGPT Consensus Verdict</title>
         <script src="https://cdn.tailwindcss.com?plugins=typography"></script>
         <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+        <script type="module">
+          import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+          mermaid.initialize({ 
+            startOnLoad: false, 
+            theme: 'base',
+            themeVariables: {
+              darkMode: true,
+              background: '#0f172a',
+              primaryColor: '#1e293b',
+              primaryTextColor: '#ffffff',
+              primaryBorderColor: '#38bdf8',
+              lineColor: '#94a3b8',
+              secondaryColor: '#0f172a',
+              tertiaryColor: '#1e293b'
+            },
+            securityLevel: 'loose',
+            fontFamily: 'ui-sans-serif, system-ui, sans-serif'
+          });
+          window.mermaid = mermaid;
+        </script>
         <style>
           body { background-color: #0f172a; color: #e2e8f0; font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
           .container { max-width: 800px; margin: 0 auto; padding: 2rem; }
           .prose { max-width: 100%; }
+          .mermaid { display: flex; justify-content: center; background: #0f172a; padding: 1rem; border-radius: 0.5rem; border: 1px solid #334155; margin: 1rem 0; overflow-x: auto; }
           /* Custom Scrollbar */
           ::-webkit-scrollbar { width: 8px; }
           ::-webkit-scrollbar-track { background: #1e293b; }
@@ -137,9 +158,27 @@ export const ConsensusDisplay: React.FC<Props> = ({ content, isThinking, criticC
           </footer>
         </div>
         <script>
+          // Configure marked to process mermaid blocks
+          const renderer = new marked.Renderer();
+          renderer.code = function(code, language) {
+            if (language === 'mermaid') {
+              return '<div class="mermaid">' + code + '</div>';
+            }
+            return '<pre><code class="language-' + language + '">' + code + '</code></pre>';
+          };
+
           // Inject content and render markdown
           const markdownContent = ${JSON.stringify(cleanContent)};
-          document.getElementById('content').innerHTML = marked.parse(markdownContent);
+          document.getElementById('content').innerHTML = marked.parse(markdownContent, { renderer: renderer });
+
+          // Run Mermaid after DOM update
+          setTimeout(async () => {
+            if (window.mermaid) {
+              await window.mermaid.run({
+                querySelector: '.mermaid'
+              });
+            }
+          }, 500);
         </script>
       </body>
       </html>
